@@ -113,6 +113,3 @@ for each in obj['mesh']:
     if len(position) != 2:
         continue
     foll_ = __create_follicle_on_mesh(mesh, position)
-
-
-
