@@ -1,7 +1,7 @@
 # this script helps to name the multiple nodes at a same time
 # code is created on 1-05-2021
 # published 10-March-2024 by Jayanth
-from maya import cmds
+import maya.cmds as cmds
 
 class RenameFunctions:
     @staticmethod
@@ -27,7 +27,7 @@ class RenameFunctions:
 
         for old, new in zip(selected_objects, replaced_names):
             cmds.rename(old, new)
-           print(f'{old} replaced with --> {new}')
+            print(f'{old} replaced with --> {new}')
 
     @staticmethod
     def add_prefix(prefix):
