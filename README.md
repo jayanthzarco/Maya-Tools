@@ -1,1 +1,1 @@
-# Maya-Tools
+# Some usefull automation tools for Autodesk Maya
