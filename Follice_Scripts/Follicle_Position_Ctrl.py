@@ -1,3 +1,7 @@
+# Control the follicle position on the nurbs surface or mesh
+# Best use for creating sliding control rigs1
+# Created By Jayanth on 27-05-2021
+
 import re
 import pymel.core as pm
 from maya import cmds
