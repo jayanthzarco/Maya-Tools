@@ -19,7 +19,7 @@ class RenameFunctions:
                          for i, old in enumerate(selected_names)]
             for old, new in zip(selected_names, new_names):
                 cmds.rename(old, new)
-                print(f"{old} renamed to --> {new}")
+                # print(f"{old} renamed to --> {new}")
     @staticmethod
     def search_and_replace(search, replace):
         selected_objects = cmds.ls(sl=True)
@@ -27,7 +27,7 @@ class RenameFunctions:
 
         for old, new in zip(selected_objects, replaced_names):
             cmds.rename(old, new)
-            print(f'{old} replaced with --> {new}')
+           # print(f'{old} replaced with --> {new}')
 
     @staticmethod
     def add_prefix(prefix):
@@ -35,7 +35,7 @@ class RenameFunctions:
         new_names = [prefix + node for node in selected_objects]
         for p, n in zip(selected_objects, new_names):
             cmds.rename(p, n)
-            print(f'{prefix} added to {p} --> {n}')
+            # print(f'{prefix} added to {p} --> {n}')
 
     @staticmethod
     def add_suffix(suffix):
@@ -43,7 +43,7 @@ class RenameFunctions:
         new_names = [node + suffix for node in selected_objects]
         for s, n in zip(selected_objects, new_names):
             cmds.rename(s, n)
-            print(f'{suffix} added to {s} --> {n}')
+            #print(f'{suffix} added to {s} --> {n}')
 
 class RenameUI(RenameFunctions):
     def __init__(self):
@@ -117,5 +117,7 @@ if __name__ == '__main__':
     win = RenameUI()
 
 """
+
 created by Jayanth
+
 """
