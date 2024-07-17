@@ -1,0 +1,507 @@
+/*
+=============================================
+***** AUTOMATIC RIGGING SYSTEM FOR BIPEDAL CHARACTERS *****
+------------------------------------------------------------------------------------------
+Author: Zagoruyko Alexander ( Russia )
+Date: 2009-2010yy
+Contacts:
+	email: azagoruyko@gmail.com
+------------------------------------------------------------------------------------------
+The system consists of 3 files:
+	1. characterTuners.ma
+		Markers for the createRig script.
+
+	2. createRig.mel
+		The script creates rig based on markers in characterTuners.ma.
+
+	3. selectorInterface.mel
+		Selector allows to select controls, seamless IK/FK switching and dynamic parenting.
+------------------------------------------------------------------------------------------
+	USAGE:
+		1. Open characterTuners.ma. 
+		2. Import character mesh here.
+		3. Adjust tuners ( locators ) to the character's mesh.
+		4. source createRig.mel
+*/
+//----------------------------------------------------------------------------------------------------------------------------------------------------------
+proc string findNamespace(string $str){
+
+	string $namespace="";
+
+	string $buffer[];
+	tokenize $str ":" $buffer;
+	 
+	for ($i=0;$i<`size $buffer`-1;$i++) $namespace += $buffer[$i]+":";
+
+	return $namespace;
+}//findNamespace
+//----------------------------------------------------------------------------------------------------------------------------------------------------------
+global proc mirrorPos(string $from,string $type){
+	string $to = "";
+	if ($from=="l_") $to="r_";
+	else $to="l_";
+	
+	string $ls[] = `ls -sl`;
+	if (`size $ls`==0) error "mirrorPos: Select character's control to use mirroring";
+	string $namespace = findNamespace($ls[0]);
+
+	if (!`objExists ($namespace+"preferences")`)error ("mirrorPos: cannot find a character under '"+$namespace+"' namespace");
+	string $mirrorAxis = `getAttr ($namespace+"preferences.axis")`;
+	//--------------------------------------
+	string $ShoulderLabel = "shoulder";
+	string $ArmIKLabel; // название элемента для IK 
+	string $ElbowIKLabel; // локтевой полевектор 
+	string $ArmControlLabel; 
+
+	string $ArmFKLabel; // название первого FK  элемента
+	string $ElbowFKLabel;  // название второго FK  элемента
+	string $HandFKLabel; //  название третьего FK  элемента
+
+	float $armIKPosCoeffs[] = {1,1,1}; // коэффициенты для миррора
+	float $armIKRotCoeffs[] = {1,1,1};
+
+	float $elbowIKPosCoeffs[] = {1,1,1};
+
+	float $armFKRotCoeffs[] = {-1,1,-1}; 
+	float $elbowFKRotCoeff = 1; 
+	float $handFKRotCoeffs[] = {1,-1,-1}; 
+	//----------------------------------
+	if ($mirrorAxis=="x"){
+			$armIKPosCoeffs = {-1,1,1};
+			$armIKRotCoeffs = {1,-1,-1};
+
+			$elbowIKPosCoeffs = {-1,1,1};
+		}//x
+		else if ($mirrorAxis=="z"){
+			$armIKPosCoeffs = {-1,1,1};
+			$armIKRotCoeffs = {1,-1,-1};
+
+			$elbowIKPosCoeffs = {1,1,-1};
+	} //z
+	//----------------------------------
+	if ($type=="arm"){ // рука
+		$ArmControlLabel = "arm_control";
+
+		$ArmIKLabel = "armIK";
+		$ElbowIKLabel = "elbowIK";
+
+		$ArmFKLabel = "armFK";
+		$ElbowFKLabel ="elbowFK";
+		$HandFKLabel = "handFK";
+	} // arm
+	else if ($type=="leg"){  //  нога
+		$ArmControlLabel = "leg_control";
+
+		$ArmIKLabel = "legIK";
+		$ElbowIKLabel = "kneeIK";
+
+		$ArmFKLabel = "legFK";
+		$ElbowFKLabel ="kneeFK";
+		$HandFKLabel = "footFK";
+	} // leg
+	
+	else error "mirrorPos: $type must be 'arm', 'leg'";
+
+	if (!`objExists ($namespace+$to+$ArmIKLabel)`) error ("mirrorPos: Cannot find "+$to+" "+$type);
+	if (!`objExists ($namespace+$from+$ArmIKLabel)`)error ("mirrorPos: Cannot find "+$from+" "+$type);
+	//-----------------------------------------------------------
+
+	float $kinematic = `getAttr ($namespace+$from+$ArmControlLabel+".kinematic")`;
+	setAttr ($namespace+$to+$ArmControlLabel+".kinematic") $kinematic;
+
+	// IK
+	float $pos[] = `getAttr ($namespace+$from+$ArmIKLabel+".t")`;
+	float $rot[] = `getAttr ($namespace+$from+$ArmIKLabel+".r")`;
+	
+	$pos = {$armIKPosCoeffs[0]*$pos[0],$armIKPosCoeffs[1]*$pos[1],$armIKPosCoeffs[2]*$pos[2]};
+	$rot = {$armIKRotCoeffs[0]*$rot[0],$armIKRotCoeffs[1]*$rot[1],$armIKRotCoeffs[2]*$rot[2]};
+
+	setAttr ($namespace+$to+$ArmIKLabel+".t") $pos[0] $pos[1] $pos[2];
+	setAttr ($namespace+$to+$ArmIKLabel+".r") $rot[0] $rot[1] $rot[2];
+	//----------------------------------------
+	$pos = `getAttr ($namespace+$from+$ElbowIKLabel+".t")`;
+	$pos = {$elbowIKPosCoeffs[0]*$pos[0],$elbowIKPosCoeffs[1]*$pos[1],$elbowIKPosCoeffs[2]*$pos[2]};
+
+	setAttr ($namespace+$to+$ElbowIKLabel+".t") $pos[0] $pos[1] $pos[2];
+	//-----------------------------------------------------------
+	// FK
+	float $rot1[] = `getAttr ($namespace+$from+$ArmFKLabel+".r")`;
+	float $rot2ry = `getAttr ($namespace+$from+$ElbowFKLabel+".ry")`;
+	float $rot3[] = `getAttr ($namespace+$from+$HandFKLabel+".r")`;
+
+	$rot1 = {$armFKRotCoeffs[0]*$rot1[0],$armFKRotCoeffs[1]*$rot1[1],$armFKRotCoeffs[2]*$rot1[2]};
+	$rot2ry  = $elbowFKRotCoeff*$rot2ry;
+	$rot3 = {$handFKRotCoeffs[0]*$rot3[0],$handFKRotCoeffs[1]*$rot3[1],$handFKRotCoeffs[2]*$rot3[2]};
+
+	setAttr ($namespace+$to+$ArmFKLabel+".r") $rot1[0] $rot1[1] $rot1[2];
+	setAttr ($namespace+$to+$ElbowFKLabel+".ry") $rot2ry;
+	setAttr ($namespace+$to+$HandFKLabel+".r") $rot3[0] $rot3[1] $rot3[2];
+
+	if ($type=="arm"){
+		float $rot[] = `getAttr ($namespace+$from+$ShoulderLabel+".r")`;
+		setAttr ($namespace+$to+$ShoulderLabel+".r") $rot[0] $rot[1] $rot[2];
+	}//
+} // mirrorPos
+//------------------------------------------------------------------------------------------
+global proc mirrorFingers(string $from){
+	string $to = "";
+	if ($from=="l_") $to="r_";
+	else $to="l_";
+
+	float $rotPhalange1Coeff[] = {-1,-1,1}; // коэффициенты для миррора
+	float $transformCoeff[] = {1,-1,1}; // коэффициенты для fingerTransform
+	//-------------------------------------------------------------------------------------------------------
+	string $ls[] = `ls -sl`;
+	if (`size $ls`==0) error "mirrorFingers: Select character's control to use mirroring";
+	string $namespace = findNamespace($ls[0]);
+
+	if (!`objExists ($namespace+"preferences")`)error ("mirrorFingers: cannot find a character under '"+$namespace+"' namespace");
+	string $mirrorAxis = `getAttr ($namespace+"preferences.axis")`;
+	//-------------------------------------------------------------------------------------------------------
+	string $types[] = {"indexFinger","middleFinger","ringFinger","pinkyFinger","thumbFinger"};
+	for ($type in $types){
+		string $FingerControlLabel = $type+"_control"; 
+
+		string $FingerIKLabel = $type+"IK"; // название элемента для IK 
+		string $FingerIKOrientationLabel = $type+"IKOrientation"; // полевектор 
+		string $FingerIKRotatorLabel = $FingerIKLabel+"Rotator"; // вращение фаланга
+
+		string $FingerTransformLabel = $type+"Transform";
+
+		string $FingerFK1Label = $type+"FK1";   // название первого FK  элемента
+		string $FingerFK2Label = $type+"FK2";  // название второго FK  элемента
+		string $FingerFK3Label = $type+"FK3"; //  название третьего FK  элемента
+
+		if (!`objExists ($namespace+$to+$FingerFK1Label)`) {/*warning ("mirrorFingers: Cannot find "+$to+" "+$type);*/continue;}
+		if (!`objExists ($namespace+$from+$FingerFK1Label)`) {/*warning ("mirrorFingers: Cannot find "+$from+" "+$type);*/continue;}
+		//------------------------------------------------------------------
+		float $kinematic = `getAttr ($namespace+$from+$FingerControlLabel+".kinematic")`;
+		setAttr ($namespace+$to+$FingerControlLabel+".kinematic") $kinematic;
+
+		// Transform
+		float $t[] = `getAttr ($namespace+$from+$FingerTransformLabel+".t")`;
+		$t = {$transformCoeff[0]*$t[0],$transformCoeff[1]*$t[1],$transformCoeff[2]*$t[2]};
+		setAttr ($namespace+$to+$FingerTransformLabel+".t") $t[0]  $t[1]  $t[2];
+
+		// FK
+		float $rot1[] = `getAttr ($namespace+$from+$FingerFK1Label+".r")`;
+		float $rot2rz = `getAttr ($namespace+$from+$FingerFK2Label+".rz")`;
+		float $rot3rz = `getAttr ($namespace+$from+$FingerFK3Label+".rz")`;
+
+		$rot1 = {$rotPhalange1Coeff[0]*$rot1[0],$rotPhalange1Coeff[1]*$rot1[1],$rotPhalange1Coeff[2]*$rot1[2]};
+
+		setAttr ($namespace+$to+$FingerFK1Label+".r") $rot1[0]  $rot1[1]  $rot1[2];
+		setAttr ($namespace+$to+$FingerFK2Label+".rz") $rot2rz ;
+		setAttr ($namespace+$to+$FingerFK3Label+".rz") $rot3rz;
+
+		// IK
+		float $pos1[] = `getAttr ($namespace+$from+$FingerIKLabel+".t")`;
+		float $pos2[] = `getAttr ($namespace+$from+$FingerIKOrientationLabel+".t")`;
+		float $rotz= `getAttr ($namespace+$from+$FingerIKRotatorLabel+".rz")`;
+
+		float $pos1Coeffs[] = {1,1,1};
+		float $pos2Coeffs[] = {1,1,1};
+		if ($mirrorAxis=="x")	{ $pos1Coeffs = {-1,1,1};$pos2Coeffs = {-1,1,1};}
+		if ($mirrorAxis=="z")	{ $pos1Coeffs = {1,1,-1};$pos2Coeffs = {1,1,-1};}
+
+		float $rotzCoeff = 1;
+
+		$pos1 = {$pos1Coeffs[0]*$pos1[0],$pos1Coeffs[1]*$pos1[1],$pos1Coeffs[2]*$pos1[2]};
+		$pos2 = {$pos2Coeffs[0]*$pos2[0],$pos2Coeffs[1]*$pos2[1],$pos2Coeffs[2]*$pos2[2]};
+		$rotz = $rotzCoeff * $rotz;
+		
+		setAttr ($namespace+$to+$FingerIKLabel+".t") $pos1[0]  $pos1[1]  $pos1[2];
+		setAttr ($namespace+$to+$FingerIKOrientationLabel+".t") $pos2[0]  $pos2[1]  $pos2[2];
+		setAttr ($namespace+$to+$FingerIKRotatorLabel+".rz") $rotz;
+
+	}// for
+} // mirrorFingers
+//------------------------------------------------------------------------------------------
+global proc mirroring(string $type,string $radioGrp){
+	string $from = `radioButtonGrp -q -sl $radioGrp`;
+
+	if ($type=="fingers"){
+		if ($from == 1) mirrorFingers("l_");
+		else mirrorFingers("r_");
+	}//fingers
+	else{
+		if ($from==1) mirrorPos("l_",$type);
+		else mirrorPos("r_",$type);
+	}// arms,legs
+}// mirroring
+//------------------------------------------------------------------------------------------
+global proc mirrorInterface(){
+	string $window = "mirrorWindow";
+	if (`windowPref -exists $window`) windowPref -remove $window;
+	if (`window -exists $window`) deleteUI -wnd $window;
+
+	window -title "Mirror" -w 250 -h 130 -sizeable false $window;
+	columnLayout -rs 2 -adj true;
+	$radioGrp = `radioButtonGrp -numberOfRadioButtons 2 -cw3 90 60 60 -label "Mirror from" -labelArray2 "Left" "Right" -sl 1`;
+
+	button -l "Mirror arms" -c ("mirroring(\"arm\",\""+$radioGrp+"\")");
+	button -l "Mirror legs" -c ("mirroring(\"leg\",\""+$radioGrp+"\")");
+	button -l "Mirror fingers" -c ("mirroring(\"fingers\",\""+$radioGrp+"\")");
+
+	showWindow $window;
+}//mirrorInterface
+//----------------------------------------------------------------------------------------------------------------------------------------------------------
+proc string[] findCharacters(){
+	string $result[] = {};
+	string $ls[] = {};
+
+	if (`objExists "preferences"`)$ls = {"preferences"};
+	else $ls = `ls "*:preferences"`;	
+
+	for ($p in $ls)
+		if (`attributeExists "id" $p`)
+			if (`getAttr ($p+".id")`=="auto-character v1" && `objExists (findNamespace($p)+"camera_selector")`) 
+				if (findNamespace($p)=="")$result[`size $result`] = ":";		
+				else $result[`size $result`] = findNamespace($p);
+
+	return $result;
+} // findCharacters
+//----------------------------------------------------------------------------------------------------------------------------------------------------------
+global proc selector_selectCharacter(string $editor){
+	string $tmp[] = `textScrollList -q -si selector_characters_textScrollList`;
+	string $namespace = $tmp[0];
+
+	if ($namespace == ":") $namespace=""; // если нет namespace 
+
+	string $camName = $namespace+"camera_selector";
+	if (`objExists $camName`){
+		modelEditor -e -cam $camName $editor;
+
+		string $oldSel[] = `ls -sl`; 
+		select -r ($namespace+"selector"); 
+		modelEditor -e -hud false -allObjects false -nc true -gr false -vs true -ss $editor; 
+
+		select -r $oldSel;
+	} // $camName
+} // selector_selectCharacter
+//----------------------------------------------------------------------------------------------------------------------------------------------------------
+proc string selector_getActiveCharacter(){
+	string $tmp[] = `textScrollList -q -si selector_characters_textScrollList`;
+	if ($tmp[0] == ":") return "";
+	else return $tmp[0];
+} // selector_getActiveCharacter
+//----------------------------------------------------------------------------------------------------------------------------------------------------------
+global proc string substituteAllStrings(string $str,string $oldStr,string $newStr){
+	string $subst = `substitute $oldStr $str $newStr`;
+
+	if ($subst == $str) return $str;
+	else return substituteAllStrings($subst,$oldStr,$newStr);	
+}
+//----------------------------------------------------------------------------------------------------------------------------------------------------------
+global proc selector_scriptJobCommand(){
+
+	string $ls[] = `ls -sl -type transform`;
+	if (`size $ls`!=1) return;
+
+	// Найти namespace и проверить наличие selector в данном namespace
+	string $namespace = findNamespace($ls[0]);
+
+	if (`objExists ($namespace+"selector")`){// если селектор найден
+		string $controls = `getAttr ($namespace+"selector.controls")`; // прочитать объекты селектора
+		string $userControls = `getAttr ($namespace+"selector.userControls")`; // прочитать объекты пользователя	
+
+		string $controlsArray[] = stringToStringArray($controls," ");
+		string $userControlsArray[] = stringToStringArray($userControls," ");
+		string $allControls[] = stringArrayCatenate($controlsArray,$userControlsArray);
+		//---------------------------------------------------------------------
+		// Удалить namespace из имени
+		string $buffer[]={}; 
+		int $size = `tokenize $ls[0] ":" $buffer`;
+		string $objWithoutNamespace = $buffer[$size-1];
+		//--------------------------------------------------------------------
+		if (stringArrayContains($objWithoutNamespace,$allControls)==1) { // если выделенный объект найден в селекторе
+			
+			string $script = `getAttr ($ls[0]+".script")`;
+			// Заменить все вхождения NAMESPACE на реальный namespace
+			//	$script = substituteAllString($script,"NAMESPACE",$namespace); - меееедленный код
+			$script = substituteAllStrings($script,"NAMESPACE",$namespace); 		
+			eval($script);
+		}// if 
+	} // if objExists
+}// selector_scriptJobCommand
+//----------------------------------------------------------------------------------------------------------------------------------------------------------
+global proc selector_createScriptJob(){
+	if (selector_findScriptJob()==-1){
+		scriptJob -kws -cu true -e "SelectionChanged" "selector_scriptJobCommand()";
+		print "Job was succefully installed\n";
+	} // if
+	else error "selector_createScriptJob: selector's job already exists";
+} // selector_createScriptJob
+//----------------------------------------------------------------------------------------------------------------------------------------------------------
+global proc int selector_findScriptJob(){
+	string $lj[] = `scriptJob -lj`;
+	for ($job in $lj) 
+		if (`match "scriptJobCommand()" $job`!="")
+			return ((int)`match "^[0-9]*" $job`);
+	return -1;	
+} // selector_findScriptJob
+//----------------------------------------------------------------------------------------------------------------------------------------------------------
+global proc selector_deleteScriptJob(){
+	int $jobID = selector_findScriptJob();
+
+	if ($jobID==-1) error "selector_deleteScriptJob: cannot find the job";
+	else {
+		scriptJob -kill $jobID;
+		print "Job was succefully deleted\n";
+	}//else
+}// selector_deleteScriptJob
+//-------------------------------------------------------------------------------------------------------
+global proc changeParent(string $control,string $parent){ // безшвовое переключение динамического парента
+	if (!`attributeExists "parent" $control`)  error ("changeParent: '"+$control+"' has not 'parent' attribute");
+	
+	string $enumNames = `addAttr -q -en ($control+".parent")`; // "(no parent):pelvis:hand" и т.д.
+	string $buf[] = {};
+	tokenize $enumNames ":" $buf; // разбить имена в массив
+
+	int $parentIndex = 0;
+	for ($parentIndex=0;$parentIndex<`size $buf`;$parentIndex++) 
+		if ($buf[$parentIndex]==$parent) break;
+
+	if ($parentIndex==`size $buf`) error ("changeParent: Cannot use '"+$parent+"' as parent of  '"+$control+"'");
+
+	string $oldSel[] = `ls -sl`;
+
+	string $sp[] = `spaceLocator`;
+	delete `parentConstraint $control $sp[0]`;
+
+	setAttr ($control+".parent",$parentIndex); // переключить парент
+
+	delete `parentConstraint $sp[0] ($control+"_dynamicParentPoser")`;
+
+	float $t[] = `getAttr ($control+"_dynamicParentPoser.t")`; // и установить объект в предыдущую позу
+	float $r[] = `getAttr ($control+"_dynamicParentPoser.r")`;
+
+	if (`getAttr -l ($control+".tx")`==0) setAttr ($control+".tx") $t[0];
+	if (`getAttr -l ($control+".ty")`==0) setAttr ($control+".ty") $t[1];
+	if (`getAttr -l ($control+".tz")`==0) setAttr ($control+".tz") $t[2];
+
+	if (`getAttr -l ($control+".rx")`==0) setAttr ($control+".rx") $r[0];
+	if (`getAttr -l ($control+".ry")`==0) setAttr ($control+".ry") $r[1];
+	if (`getAttr -l ($control+".rz")`==0) setAttr ($control+".rz") $r[2];
+
+	delete $sp[0];
+
+	select -r $oldSel;
+}// changeParent
+//----------------------------------------------------------------------------------------------------------
+global proc selector_parentsListSelectCommand(string $list,string $control){ 
+	string $item[] = `textScrollList -q -selectItem $list`;
+
+	changeParent($control,$item[0]);
+} // selector_parentsListSelectCommand
+//--------------------------------------------------------
+global proc selector_changeParentSelector(string $controls[]){
+	
+	int $n = `size $controls`;
+	int $width = 130;
+	int $height = 200;
+	int $offset = 5;
+	
+	string $window = "selector_changeParent";
+	if (`windowPref -exists $window`) windowPref -remove $window;
+	if (`window -exists $window`) deleteUI -wnd $window;
+
+	window -title "parent" -w ($width*$n+($offset*$n)+10) -h ($height+60) -sizeable false $window;
+
+	string $cw = "";
+	for ($i=1;$i<=$n;$i++) $cw+="-cw "+$i+" "+($width+$offset)+" ";
+
+	eval("rowLayout -numberOfColumns "+$n+" "+$cw+";");
+
+	for ($i=0;$i<$n;$i++){
+		columnLayout;
+		text -l $controls[$i]; // надпись
+	
+		string $parentsStr = `addAttr -q -en ($controls[$i]+".parent")`;
+		string $currentParent = `getAttr -as ($controls[$i]+".parent")`;
+
+		string $parents[] = {};
+		tokenize $parentsStr ":" $parents;
+
+		string $scrollList = `textScrollList -width $width -height $height`;
+		// заполнить лист парентами
+		for ($item in $parents) textScrollList -e -append $item $scrollList;
+	
+		textScrollList -e -selectItem $currentParent $scrollList;
+		textScrollList -e -sc ("selector_parentsListSelectCommand(\""+$scrollList+"\",\""+$controls[$i]+"\")") $scrollList;
+
+		setParent ..;
+	}// for
+
+	showWindow $window;
+
+} // selector_changeParentSelector
+//-----------------------------------------------------------------------------------------------
+global proc selector_close(string $editor){
+	if (!`modelEditor -ex $editor`) return;
+
+	modelEditor -e -vs false $editor;
+	deleteUI -panel $editor;
+}//selector_close
+//-----------------------------------------------------------------------------------------------
+global proc kinematicSwitch(string $pref, // l_ или r_
+									    string $type // arm, leg, indexFinger, middleFinger, ringFinger, pinkyFinger
+					  					){
+
+	string $ls[] = `ls -sl`;
+
+	if (`size $ls`==0) error "kinematicSwitch: Select character's control to use kinematic switch";
+
+	string $namespace = findNamespace($ls[0]);
+	if (!`objExists ($namespace+$pref+$type+"_control")`) error ("kinematicSwitch: '"+$type+"' is invalid");
+
+	float $currentKinematic = `getAttr ($namespace+$pref+$type+"_control.kinematic")`;
+
+	if ($currentKinematic==0){ // передвинуть кости IK в FK и переключить кинематику
+
+		string $script = `getAttr ($namespace+"preferences."+$pref+$type+"_fk2ik_script")`;
+		$script = substituteAllString($script,"NAMESPACE",$namespace);
+		eval($script);
+		
+		setAttr ($namespace+$pref+$type+"_control.kinematic") 1;
+	} // IK
+
+	if ($currentKinematic==1){  // передвинуть кости FK в IK и переключить кинематику
+
+		string $script = `getAttr ($namespace+"preferences."+$pref+$type+"_ik2fk_script")`;
+		$script = substituteAllString($script,"NAMESPACE",$namespace);
+		eval($script);
+		
+		setAttr ($namespace+$pref+$type+"_control.kinematic") 0;
+	} // FK
+} // kinematicSwitch
+//-----------------------------------------------------------------------------------------------
+proc showSelectorInterface(){
+	string $window = "selector_window";
+
+	if (`windowPref -exists $window`) windowPref -remove $window;
+	if (`window -exists $window`) deleteUI -wnd $window;
+
+	window -title "Interface" -w 300 -h 500  $window;
+	string $paneLayout = `paneLayout -configuration "horizontal2" -ps 1 100 80` ;
+	string $modelPanel = `modelPanel -mbv false -cam "camera_selector"`;
+	string $editor = `modelPanel -q -me $modelPanel`;
+	
+	setParent $paneLayout;
+
+	paneLayout -configuration "vertical2" -ps 1 50 50;
+		columnLayout -adj true;
+			button -label "Run selector" -c "selector_createScriptJob()";
+			button -label "Stop selector" -c "selector_deleteScriptJob()";
+			separator;
+			button -label "Mirroring" -c "mirrorInterface()";
+			setParent ..;
+		textScrollList -ams false -selectCommand ("selector_selectCharacter(\""+$editor+"\")") selector_characters_textScrollList;
+
+	for ($item in findCharacters()) textScrollList -e -append $item selector_characters_textScrollList;
+
+	scriptJob -uid $window ("selector_close(\""+$editor+"\")") -p $window;
+	showWindow $window;
+}// showSelectorInterface
+
+showSelectorInterface();
