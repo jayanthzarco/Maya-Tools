@@ -1,0 +1,3970 @@
+//----------------------------------------------------------------------------------------------------------
+proc lockAttrs (string $obj,int $t[], int $r[], int $s[], int $v){
+	if (`objExists $obj`){
+		if ($t[0]==1) setAttr -l true -k false ($obj+".tx");
+		else if ($t[0]==0) setAttr -l false -k true ($obj+".tx");
+
+		if ($t[1]==1) setAttr -l true -k false ($obj+".ty");
+		else if ($t[1]==0) setAttr -l false -k true ($obj+".ty");
+
+		if ($t[2]==1) setAttr -l true -k false ($obj+".tz");
+		else if ($t[2]==0) setAttr -l false -k true ($obj+".tz");
+		//--------------------------------------------------
+		if ($r[0]==1) setAttr -l true -k false ($obj+".rx");
+		else if ($r[0]==0) setAttr -l false -k true ($obj+".rx");
+
+		if ($r[1]==1) setAttr -l true -k false ($obj+".ry");
+		else if ($r[1]==0) setAttr -l false -k true ($obj+".ry");
+
+		if ($r[2]==1) setAttr -l true -k false ($obj+".rz");
+		else if ($r[2]==0) setAttr -l false -k true ($obj+".rz");
+		//--------------------------------------------------
+		if ($s[0]==1) setAttr -l true -k false ($obj+".sx");
+		else if ($s[0]==0) setAttr -l false -k true ($obj+".sx");
+
+		if ($s[1]==1) setAttr -l true -k false ($obj+".sy");
+		else if ($s[1]==0) setAttr -l false -k true ($obj+".sy");
+
+		if ($s[2]==1) setAttr -l true -k false ($obj+".sz");
+		else if ($s[2]==0) setAttr -l false -k true ($obj+".sz");
+
+		if ($v==1) setAttr -l true -k false ($obj+".v");
+		else if ($v==0) setAttr -l false -k true ($obj+".v");
+	}
+	else error ("lockAttrs: "+$obj+" does not exist");
+} // lockAttrs
+//----------------------------------------------------------------------------------------------------------
+proc setPivots(string $source,string $dest){
+
+	string $locator[] = `spaceLocator`;
+	pointConstraint $source $locator[0];
+
+	float $t[] = `getAttr ($locator[0]+".t")`;
+	move -a $t[0] $t[1] $t[2] ($dest+".scalePivot") ($dest+".rotatePivot");
+
+	delete $locator[0];
+} // setPivots
+//----------------------------------------------------------------------------------------------------------
+proc string findNamespace(string $str){
+
+	string $namespace="";
+
+	string $buffer[];
+	tokenize $str ":" $buffer;
+
+	for ($i=0;$i<`size $buffer`-1;$i++) $namespace += $buffer[$i]+":";
+
+	return $namespace;
+}//findNamespace
+//-------------------------------------------------------------------------------------------------------
+proc string[] stretchNodes(int $start, // íà÷àëüíûé èíäåêñ êîñòè, Íàïðèìåð, joint1... joint10... íóæíî óêàçàòü 1
+						int $end, // êîíå÷íûé èíäåêñ êîñòè
+						int $useOneNode, // ñîçäàâàòü ëè íà êàæäóþ êîñòè íîäû èëè èñïîëüçîâàòü ðàâíîìåðíûé ñòðåò÷
+						string $baseName, // áàçîâîå èìÿ êîñòè, Íàïðèìåð, l_arm1_joint...l_arm10_joint. l_arm - áàçîâîå èìÿ
+						string $endName, // _joint - êîíå÷íîå èìÿ
+						string $stretchOnOff, // àòðèáóò äëÿ âêëþ÷åíèÿ ñòðå÷à
+						string $minStretch, // Áóäåò ëè êîñòü ñêâîøèòüñÿ? íà ñêîëüêî?  Àòðèáóò èëè çíà÷åíèå
+						string $saveVolume, // àòðèáóò äëÿ ñîõðàíåíèÿ îáúåìà êîñòè ïðè ñòðåò÷å
+						string $attr, // êàêîé àòðèáóò áóäåò îïðàøèâàòüñÿ ïðè ñòðåò÷å? äèñòàíñ?
+						string $minDistance // ìàêñèìàëüíîå çíà÷åíèå $attr,ïðè êîòîðîì åùå íåò ñòðåò÷à
+						){
+
+	$condNode = "";
+	$b2attr = "";
+	$stretchOnOffX = "";
+	$stretchOnOffY = "";
+
+	for ($i=$start;$i<=$end;$i++){
+		$joint = $baseName+$i+$endName;
+
+		if ( (($useOneNode==true) && ($i==$start)) || ($useOneNode==false) ){
+			$mulNode = `createNode multiplyDivide`;
+			$mulNode = `rename $mulNode ($joint+"_stretch_multiplyDivide")`;
+
+			setAttr ($mulNode+".operation") 2; // divide
+
+			if (`objExists $minDistance`){
+				connectAttr $minDistance ($mulNode+".input1Y");
+				connectAttr $minDistance ($mulNode+".input2X");
+			}
+			else{
+				setAttr ($mulNode+".input1Y") `getAttr $attr`;
+				setAttr ($mulNode+".input2X") `getAttr $attr`;
+			}
+
+			connectAttr $attr ($mulNode+".input1X");
+			connectAttr $attr ($mulNode+".input2Y");
+			setAttr ($mulNode+".input1Z") 1;
+			//------------------------------------
+			$condNode = `createNode condition`;
+			$condNode = `rename $condNode ($joint+"_stretch_condition")`;
+
+			setAttr ($condNode+".operation") 2;// greater then
+
+			connectAttr ($mulNode+".outputX") ($condNode+".firstTerm");
+			connectAttr ($mulNode+".outputX") ($condNode+".colorIfTrueR");
+			connectAttr ($mulNode+".outputY") ($condNode+".colorIfTrueG");
+
+			connectAttr ($mulNode+".outputZ")($condNode+".colorIfFalseG");
+
+			if (`objExists $minStretch`){
+				connectAttr $minStretch ($mulNode+".input2Z");
+				connectAttr $minStretch ($condNode+".colorIfFalseR");
+				connectAttr $minStretch ($condNode+".secondTerm");
+			}else{
+				setAttr ($mulNode+".input2Z") ((float)$minStretch);
+				setAttr ($condNode+".colorIfFalseR")((float)$minStretch);
+				setAttr ($condNode+".secondTerm") ((float)$minStretch);
+			}
+
+			if (`objExists $saveVolume`){
+				$b2attr = `createNode blendTwoAttr -n ($joint+"_saveVolume_blendTwoAttr")`;
+				setAttr ($b2attr+".i[0]") 1;
+				connectAttr ($condNode+".outColorG") ($b2attr+".i[1]");
+				connectAttr $saveVolume ($b2attr+".attributesBlender");
+			}
+
+			if (`objExists $stretchOnOff`){
+				$stretchOnOffX = `createNode blendTwoAttr -n ($joint+"_stretchOnOffX_blendTwoAttr")`;
+				$stretchOnOffY = `createNode blendTwoAttr -n ($joint+"_stretchOnOffY_blendTwoAttr")`;
+
+				connectAttr $stretchOnOff ($stretchOnOffX+".attributesBlender");
+				connectAttr $stretchOnOff ($stretchOnOffY+".attributesBlender");
+
+				setAttr ($stretchOnOffX+".i[0]") 1;
+				setAttr ($stretchOnOffY+".i[0]") 1;
+
+				if (`objExists $saveVolume`){
+					connectAttr ($condNode+".outColorR") ($stretchOnOffX+".i[1]");
+					connectAttr ($b2attr+".output") ($stretchOnOffY+".i[1]");
+				}
+				else{
+					connectAttr ($condNode+".outColorR") ($stretchOnOffX+".i[1]");
+					connectAttr ($condNode+".outColorG") ($stretchOnOffY+".i[1]");
+				}
+			}  // if $stretchOnOff
+
+		}// if $useOneNode
+
+		if (`objExists $saveVolume`){
+			if (`objExists $stretchOnOff`){
+				connectAttr ($stretchOnOffX+".output") ($joint+".sx");
+				connectAttr ($stretchOnOffY+".output") ($joint+".sy");
+				connectAttr ($stretchOnOffY+".output") ($joint+".sz");
+			}
+			else{
+				connectAttr ($condNode+".outColorR") ($joint+".sx");
+				connectAttr ($b2attr+".output") ($joint+".sy");
+				connectAttr ($b2attr+".output") ($joint+".sz");
+			}
+		}
+		else{ // íå ñîõðàíÿòü îáúåì
+			if (`objExists $stretchOnOff`){
+				connectAttr ($stretchOnOffX+".output") ($joint+".sx");
+				connectAttr ($stretchOnOffY+".output") ($joint+".sy");
+				connectAttr ($stretchOnOffY+".output") ($joint+".sz");
+			}
+			else{
+				connectAttr ($condNode+".outColorR") ($joint+".sx");
+				connectAttr ($condNode+".outColorG") ($joint+".sy");
+				connectAttr ($condNode+".outColorG") ($joint+".sz");
+			}
+		}
+	}//for
+
+	return {$condNode,$b2attr, $stretchOnOffX,$stretchOnOffY};
+} // stretchNodes
+//-------------------------------------------------------------------------------------------------------
+proc addToSet(string $set,string $objects[]){
+	if (!`objExists $set`) sets -em -n $set;
+
+	sets -add $set $objects;
+} // addToSet
+//-------------------------------------------------------------------------------------------------------
+proc string connect_10_01 (string $driver, // óïðàâëÿþùèé àòðèáóò
+					string $attrs1[], // åñëè $driver = 0, òî òóò áóäåò 1
+				        string $attrs0[] //  åñëè $driver = 0, òî òóò áóäåò 0
+					){
+
+	string $name = `substitute "\\." $driver "_"`;
+	string $plus = "";
+
+	if (!`objExists ($name+"_plusMinusAverage")`){
+		$plus = `createNode plusMinusAverage -n ($name+"_plusMinusAverage")`;
+		setAttr ($plus+".operation") 2;// âû÷èòàíèå
+
+		setAttr ($plus+".input2D[0].input2Dx") 1 ;
+		connectAttr $driver ($plus+".input2D[1].input2Dx");
+
+		connectAttr $driver ($plus+".input2D[0].input2Dy");
+		setAttr ($plus+".input2D[1].input2Dy") 0;
+	} else $plus = $name+"_plusMinusAverage";
+
+	for ($a in $attrs1)  // ýòè àòðèáóòû ðàâíû 1 åñëè $driver =0
+		if (`objExists $a`)connectAttr ($plus+".output2Dx") $a;
+
+	for ($a in $attrs0) // ýòè àòðèáóòû ðàâíû 0 åñëè $driver =0
+		if (`objExists $a`)connectAttr ($plus+".output2Dy") $a;
+
+	return $plus;
+} // connect_10_01
+//-------------------------------------------------------------------------------------------------------
+proc shapeParent(string $parent,string $list[],string $newName){
+	for ($obj in $list){
+		if ($obj == $parent) continue;
+
+		lockAttrs($obj,{0,0,0},{0,0,0},{0,0,0},0);
+
+		parent $obj $parent;
+
+		string $objShape[] = `listRelatives -f -s $obj`;
+		makeIdentity -apply true -t 1 -r 1 -s 1 -n 0 $obj;
+
+		for ($s in $objShape) {
+			if ($newName!="") $s = `rename $s $newName`;
+			parent -r -shape $s $parent;
+		}// for
+
+		delete $obj;
+	} // for
+
+}// shapeParent
+//-------------------------------------------------------------------------------------------------------
+proc makeDynamicParent (string $control, // ýëåìåíò óïðàâëåíèÿ,íà êîòîðûé öåïëÿåòñÿ äèíàìè÷åñêèé ïàðåíò
+									  string $parentTo, // êóäà êèäàòü êîíñòðåéíò
+									  string $data[] // ìàññèâ âèäà íàçâàíèå=êîíòðîë
+									  ){
+
+	 if (`size $data`==0) error "makeDynamicParent: $data does not specified";
+
+	 string $dynNames[] = {}; // íàçâàíèÿ
+	 string $dynConstraints[] = {}; // êîíñòðåéíòû
+
+	for ($i=0;$i<`size $data`;$i++){ // ñ÷èòàòü íàçâàíèÿ è îáúåêòû èç äàííûõ
+		string $buf[] = {};
+		tokenize $data[$i] "=" $buf;
+
+		$dynNames[$i] = `strip $buf[0]`;
+		$dynConstraints[$i] = `strip $buf[1]`;
+	} // for
+
+	string $enumNames = "(no parent):";
+	for ($i=0;$i<`size $dynNames`;$i++) $enumNames = $enumNames + $dynNames[$i]+":";
+
+	addAttr -ln "parent"  -at "enum" -en $enumNames  -k true $control;
+	string $pc[] = `parentConstraint -mo $dynConstraints $parentTo`;
+	setAttr ($pc[0]+".interpType") 2; // shortness
+	// --------
+	for ($i=0;$i<`size $dynConstraints`;$i++){
+		if (!`objExists $dynConstraints[$i]`) error ("makeDynamicParent: No object matched "+$dynConstraints[$i]);
+
+		disconnectAttr  ($dynConstraints[$i]+".scale") ($pc[0]+".target["+$i+"].targetScale");
+
+		setDrivenKeyframe -at ($dynConstraints[$i]+"W"+$i) -v 0 -dv $i -cd ($control+".parent") $pc[0];
+		setDrivenKeyframe -at ($dynConstraints[$i]+"W"+$i) -v 1 -dv ($i+1) -cd ($control+".parent") $pc[0];
+		setDrivenKeyframe -at ($dynConstraints[$i]+"W"+$i) -v 0 -dv ($i+2) -cd ($control+".parent") $pc[0];
+
+	} // for
+
+} // makeDynamicParent
+//----------------------------------------------------------------------------------------------------------
+proc createControl(string $type, // òèï êîíòðîëà
+				string $objects[], // íà ÷òî åãî öåïëÿòü è îáúåêò,îïðåäåëÿþùèé ïîçèöèþ êîíòðîëà
+				float $params[],  // íàñòðîéêè øåéïà, 0 - ðàäèóñ, 1 - öâåò, 2 - îñü äëÿ êðóæêà (0-x,1-y,2-z)
+				string $visibleAttr // àòðèáóò, óïðàâëÿþùèé âèäèìîñòüþ
+				){
+
+	float $coeff = `getAttr character_tuners.controlsSize`; // îòñêàëèðîâàòü êîíòðîëû ñîîòâåòñòâåííûì îáðàçîì
+
+	string $curvesList[] = {}; // ìàññèâ ñ êðèâûìè,êîòîðûå íóæíî îáúåäèíèòü â îäèí øåéï
+
+	if ($type=="sphere"){ // åñëè íóæíî ñîçäàòü ñôåðêó
+		string $curve1[] = `circle -nr 1 0 0 -r ($params[0]*$coeff)`;
+		string $curve2[] = `circle -nr 0 1 0 -r ($params[0]*$coeff)`;
+		string $curve3[] = `circle -nr 0 0 1 -r ($params[0]*$coeff)`;
+
+		select -r $curve1 $curve2 $curve3;
+		DeleteHistory;
+
+		$curvesList[0] = $curve1[0];
+		$curvesList[1] = $curve2[0];
+		$curvesList[2] = $curve3[0];
+	} // ñôåðêà
+
+	else if ($type=="circle"){
+		string $curve[] = {};
+
+		if ($params[2] == 0)       $curve = `circle -nr 1 0 0 -r ($params[0]*$coeff)`;
+		else if ($params[2] == 1) $curve = `circle -nr 0 1 0 -r ($params[0]*$coeff)`;
+		else if ($params[2] == 2) $curve = `circle -nr 0 0 1 -r ($params[0]*$coeff)`;
+		else {warning "createControl: $params[2] must be 0,1 or 2. Skipped"; return;}
+
+		select -r $curve;
+		DeleteHistory;
+
+		$curvesList[0] = $curve[0];
+	}// êðóæîê
+
+	else if ($type=="flag"){
+
+		string $curve = `curve -d 1 -p 0 0 0 -p 0 ($params[0]*$coeff*2) 0 -p ($params[0]*$coeff*1) ($params[0]*$coeff*2) 0 -p 0 ($params[0]*$coeff*3) 0 -p ($params[0]*$coeff* -1) ($params[0]*$coeff*2) 0 -p 0 ($params[0]*$coeff*2) 0`;
+		scale 1 $params[2] 1 $curve;
+		makeIdentity -apply true -t 1 -r 1 -s 1 -n 0 $curve; // ôðèçèì
+
+		select -r $curve;
+		DeleteHistory;
+
+		$curvesList[0] = $curve;
+	}// ôëàæîê
+
+	else if ($type=="rect"){
+		float $width = $params[2]*$params[0]*$coeff;
+		float $height = $params[3]*$params[0]*$coeff;
+
+		string $curve = "";
+		if ($params[4]==0)  $curve = `curve -d 1 -p 0 (-$width/2) (-$height/2) -p 0 (-$width/2) ($height/2) -p 0 (-$width/2) ($height/2) -p 0 ($width/2) ($height/2) -p 0 ($width/2) (-$height/2) -p 0 (-$width/2) (-$height/2)`;
+		if ($params[4]==1)  $curve = `curve -d 1 -p (-$width/2) 0 (-$height/2) -p (-$width/2) 0 ($height/2) -p (-$width/2) 0 ($height/2) -p ($width/2) 0 ($height/2) -p ($width/2) 0 (-$height/2) -p (-$width/2) 0 (-$height/2)`;
+		if ($params[4]==2)  $curve = `curve -d 1 -p (-$width/2) (-$height/2) 0 -p (-$width/2) ($height/2) 0 -p (-$width/2) ($height/2) 0 -p ($width/2) ($height/2) 0 -p ($width/2) (-$height/2) 0 -p (-$width/2) (-$height/2) 0`;
+
+		select -r $curve;
+		DeleteHistory;
+
+		$curvesList[0] = $curve;
+
+	}// ïðÿìîóãîëüíèê
+
+	else if ($type=="cube"){
+		float $size = $params[0]*$coeff;
+		float $step = 0.5;
+		string $curve = `curve -d 1 -p (-$step*$size) (-$step*$size) ($step*$size) -p ($step*$size) (-$step*$size) ($step*$size) -p ($step*$size) (-$step*$size) (-$step*$size) -p (-$step*$size) (-$step*$size) (-$step*$size) -p (-$step*$size) (-$step*$size) ($step*$size)  -p (-$step*$size) ($step*$size) ($step*$size) -p ($step*$size) ($step*$size) ($step*$size) -p ($step*$size) ($step*$size) (-$step*$size) -p (-$step*$size) ($step*$size) (-$step*$size) -p (-$step*$size) ($step*$size) ($step*$size) -p (-$step*$size) ($step*$size) (-$step*$size)   -p (-$step*$size) (-$step*$size) (-$step*$size) -p ($step*$size) (-$step*$size) (-$step*$size) -p ($step*$size) ($step*$size) (-$step*$size) -p ($step*$size) ($step*$size) ($step*$size) -p ($step*$size) (-$step*$size) ($step*$size)`;
+
+		select -r $curve;
+		DeleteHistory;
+
+		$curvesList[0] = $curve;
+
+	}// êóá
+
+	shapeParent($curvesList[0],$curvesList,"");
+	delete `parentConstraint $objects[1] $curvesList[0]`; // óñòàíàâëèâàåì è îðèåíòèðóåì øåéï â íóæíî ïîëîæåíèå
+	shapeParent($objects[0],{$curvesList[0]},$objects[0]+"Shape1");
+
+	color -ud ((int)$params[1]) $objects[0]; // öâåò
+
+	//--------------------------------------------------------
+	if ($visibleAttr!=""){
+		if (!`attributeExists $visibleAttr "main"`) addAttr -at bool -ln $visibleAttr -dv true -k true main;
+
+		lockAttrs($objects[0],{-1,-1,-1},{-1,-1,-1},{-1,-1,-1},0);
+		connectAttr ("main."+$visibleAttr) ($objects[0]+".v");
+		lockAttrs($objects[0],{-1,-1,-1},{-1,-1,-1},{-1,-1,-1},1);
+	} // $visibleAttr!=""
+
+} // createControl
+//--------------------------------------------------------------------------------------------------------------------------------
+proc drawHelpLine(string $objs[], // ìàññèâ îáúåêòîâ,êîòîðûå íóæíî ñîåäèíèòü ëèíèåé
+  				     string $baseName, // èìÿ ñèñòåìû
+				     string $visibleAttr // êàêîé àòðèáóò îïðåäåëÿåò âèäèìîñòü ëèíèè
+			             ){
+
+	string $curveCmd = "curve -n "+$baseName+"_helpLine_curve -d 1 ";
+
+	for ($i=0;$i<`size $objs`;$i++)$curveCmd += "-p "+$i+" 0 0 ";
+	eval($curveCmd);
+
+	string $group = `group -n ($baseName+"_helpLine_group") -em -p "others"`;
+	connectAttr $visibleAttr ($group+".v");
+	lockAttrs($group,{1,1,1},{1,1,1},{1,1,1},1);
+
+	parent ($baseName+"_helpLine_curve") $group;
+	setAttr ($baseName+"_helpLine_curve.template") true;
+
+	lockAttrs($baseName+"_helpLine_curve",{1,1,1},{1,1,1},{1,1,1},1);
+
+	for ($i=0;$i<`size $objs`;$i++){
+		string $locator[] = `spaceLocator -n ($baseName+"_helpLine_locator"+($i+1))`;
+		connectAttr ($locator[0]+".t") ($baseName+"_helpLine_curve.controlPoints["+$i+"]");
+		parent $locator[0] $group;
+
+		setAttr ($locator[0]+".v")false;
+		pointConstraint $objs[$i] $locator[0];
+		lockAttrs($locator[0],{1,1,1},{1,1,1},{1,1,1},1);
+	} // for
+}// drawHelpLine
+//-------------------------------------------------------------------------------------------------------
+proc createMainHierarchy(){
+	group -n "character" -em;
+	group -n "skeleton" -em -p "character"; // òóò ó íàñ êîñòè
+	group -n "controls" -em -p "character"; // êîíòðîëû ðóê,íîã
+	group -n "other_controls" -em -p "controls"; // êîíòðîëû äëÿ âñåãî îñòàëüíîãî
+	group -n "fingers_controls" -em -p "controls"; // êîíòðîëû äëÿ ïàëüöåâ
+	group -n "others" -em -p "character"; // ïðî÷åå
+	//----------------
+	group -n "preferences" -em -p "character"; // èíôîðìàöèÿ î êèíåìàòèêå è ò.ä. â îáùåì íàñòðîéêè ïåðñîíàæà
+
+	addAttr -ln "id"  -dt "string" preferences; // àòðèáóò äëÿ íàõîæäåíèÿ ïåðñîíàæåé â ñöåíå
+	setAttr -l true -type "string" preferences.id "auto-character v1";
+	//------
+	addAttr -ln "axis"  -dt "string" preferences; // îñü äëÿ ìèððîðà
+	float $rotY = `getAttr character_tuners.ry`;
+	string $axis = "";
+	if ($rotY==0 || $rotY==180 || $rotY==-180) $axis = "x";
+	else if ($rotY==-90 || $rotY==90) $axis = "z";
+
+	setAttr -l true -type "string" preferences.axis $axis;
+	//---------------
+	group -n "geometry" -em -p "character"; // ìýø
+	group -n "main" -em -p "character";
+
+	addAttr -ln "scaleFactor"  -at double -min 0.01 -dv 1 -k true "main";
+
+	addAttr -at bool -ln "visibilities" -k true main;
+	setAttr -l true main.visibilities;
+
+	addAttr -at bool -ln "mesh" -dv true -k true main;
+	connectAttr "main.mesh" "geometry.v";
+
+	addAttr -at bool -ln "others" -dv true -k true main;
+	connectAttr "main.others" "others.v";
+
+	//----------------
+
+	connectAttr "main.scaleFactor" "main.sx";
+	connectAttr "main.scaleFactor" "main.sy";
+	connectAttr "main.scaleFactor" "main.sz";
+
+	connectAttr "main.t" "controls.t";
+	connectAttr "main.r" "controls.r";
+	connectAttr "main.s" "controls.s";
+
+	connectAttr "main.s" "skeleton.s";
+	// ----------------------------------------------------
+	createControl("circle",{"main","main"},{5.0,8,1},"");
+	// ----------------------------------------------------
+	lockAttrs("character",{1,1,1},{1,1,1},{1,1,1},0);
+	lockAttrs("geometry",{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs("others",{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs("preferences",{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs("skeleton",{1,1,1},{1,1,1},{1,1,1},0);
+	lockAttrs("controls",{1,1,1},{1,1,1},{1,1,1},0);
+	lockAttrs("other_controls",{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs("fingers_controls",{1,1,1},{1,1,1},{1,1,1},1);
+
+	lockAttrs("main",{0,0,0},{0,0,0},{1,1,1},1);
+
+}// createMainHierarchy
+//-------------------------------------------------------------------------------------------------------
+proc string[] createDistance(string $name,string $point1,string $point2){
+	string $distanceDimension = `createNode distanceDimShape`;
+
+	string $sp1[] = `spaceLocator`;
+	string $sp2[] = `spaceLocator`;
+	connectAttr ($sp1[0]+".translate") ($distanceDimension+".startPoint");
+	connectAttr ($sp2[0]+".translate") ($distanceDimension+".endPoint");
+
+	pointConstraint $point1 $sp1[0];
+	pointConstraint $point2 $sp2[0];
+
+	group -n ($name+"_group") -p "others" $sp1[0] $sp2[0] $distanceDimension;
+	setAttr ($name+"_group.v") false;
+
+	lockAttrs($name+"_group",{1,1,1},{1,1,1},{1,1,1},1);
+
+	rename `listRelatives -parent $distanceDimension` $name;
+
+	return {$distanceDimension,$sp1[0],$sp2[0]};
+} // createDistance
+//-------------------------------------------------------------------------------------------------------
+proc createStretchRig(int $params[], // ÷èñëî êîñòåé íà ïîâåðõíîñòè , ÷èñëî óïðàâëÿþùèõ ýëåìåíòîâ
+					 string $baseName, // êàê íàçâàòü stretchRig?
+					 string $points[], // ïîçèöèîíèðîâàíèå ðèãà
+					 string $rotates[], // è âðàùåíèå
+					 string $constraints[], // êîíñòðåéíòû äëÿ ýëåìåíòîâ óïðàâëåíèÿ. Äîëæíû áûòü çàïîëíåíû äëÿ êàæäîãî ýëåìåíòà.
+					 string $parentTo // ê ÷åìó ïàðåíòèòü èòîãîâûé ñòðåò÷ ðèã
+					  ){
+
+	/*
+	Ñîçäàíèå stretchRig - íàáîð ñóñòàâîâ, óïðàâëÿåìûõ NURBS ïîâåðõíîñòþ, êîòîðàÿ â ñâîþ î÷åðåäü óïðàâëÿåòñÿ ðåøåòêîé
+	*/
+	int $numJoints = $params[0];
+	int $numControls = $params[1];
+
+	if ($numJoints<2) {warning "createStretchRig: $numJoints must be > 1";return;}
+	if ($numControls<2) {warning "createStretchRig: $numControls must be > 1"; return;}
+
+	string $startLocator[] = `spaceLocator -n ($baseName+"_startPoint")`;
+	string $endLocator[] = `spaceLocator -n ($baseName+"_endPoint")`;
+
+	parent $endLocator[0] $startLocator[0];
+	parent $startLocator[0] $parentTo;
+
+	string $endRotator = `group -n ($baseName+"_endPointRotator") -em -p $startLocator `;
+
+	string $nurbsPlane[ ]= `nurbsPlane -p 0 0 0 -ax 0 1 0 -w 1 -lr 1 -d 3 -u $numJoints -v 1 -ch false -n ($baseName+"_plane")`;
+	setAttr ($nurbsPlane[0]+".v") false;
+	setAttr ($nurbsPlane[0]+".inheritsTransform") false;
+	setAttr ($nurbsPlane[1]+".template") true;
+
+	parent $nurbsPlane[0] $startLocator;
+
+	lockAttrs($nurbsPlane[0],{1,1,1},{1,1,1},{1,1,1},1);
+	//--------------------
+	string $jointsGroup = `group -n ($baseName+"_joints_group") -em -p $startLocator`;
+	string $follicleGroup = `group -n ($baseName+"_follicles_group") -em -p $startLocator`;
+
+	lockAttrs($jointsGroup,{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($follicleGroup,{1,1,1},{1,1,1},{1,1,1},1);
+
+	string $joints[] = {};
+	for ($i=1;$i<=$numJoints;$i++){
+		string $follicle = `createNode follicle -n ($baseName+"_follicleShape"+$i)`;
+		string $follicleParent[] = `listRelatives -p $follicle`;
+		$follicleParent[0] = `rename $follicleParent[0] ($baseName+"_follicle"+$i)`;
+		setAttr ($follicleParent[0]+".inheritsTransform") false;
+
+		parent $follicleParent[0] $follicleGroup; // ôîëèêóëû ïîìåñòèòü â îòäåëüíóþ ãðóïïó
+
+		connectAttr ($follicle+".outTranslate") ($follicleParent[0]+".t");
+		connectAttr ($follicle+".outRotate") ($follicleParent[0]+".r");
+
+		connectAttr ($nurbsPlane[0]+".worldSpace") ($follicle+".inputSurface");
+
+		float $step = (2/(float)$numJoints-1/(float)$numJoints)/2;
+		setAttr ($follicle+".parameterU") (($i/(float)$numJoints)-$step);
+
+		//setAttr ($follicle+".parameterU") ((($i-1)/((float)$numJoints-1)));
+
+		setAttr ($follicle+".parameterV") 0.5;
+		setAttr -l true ($follicle+".visibility") false;
+
+		$joints[$i-1] = `joint -r -p 0 0 0 -radius 0.5 -n ($baseName+$i+"_joint")  $jointsGroup`;
+		joint -e -zso -oj xyz -sao yup $joints[$i-1];
+
+		parentConstraint $follicleParent[0] $joints[$i-1]; // ôîëèêóëû óïðàâëÿþò ñóñòàâàìè
+
+		connectAttr ($points[0]+".sy") ($joints[$i-1]+".sy");
+		connectAttr ($points[0]+".sz") ($joints[$i-1]+".sz");
+
+		lockAttrs($follicleParent[0],{1,1,1},{1,1,1},{1,1,1},1);
+		lockAttrs($joints[$i-1],{1,1,1},{1,1,1},{1,1,1},1);
+	}//for $numJoints
+
+	addToSet("bindJointsSet",$joints); // äîáàâèòü â ñåò êîñòè
+
+	drawHelpLine($joints,$baseName,$startLocator[0]+".v");
+
+	string $lattice[] = `lattice -divisions $numControls 2 2 -objectCentered true  -ldv 2 2 2 -ol 1 -exclusive "characterPartition" -n ($baseName+"_lattice") $nurbsPlane[0]`;
+	parent $lattice[1] $lattice[2] $startLocator;
+	setAttr ($lattice[1]+".inheritsTransform") false;
+	setAttr ($lattice[2]+".inheritsTransform") false;
+	setAttr ($lattice[1]+".v") false;
+	setAttr ($lattice[2]+".v") false;
+
+	lockAttrs($lattice[1],{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($lattice[2],{1,1,1},{1,1,1},{1,1,1},1);
+
+	string $clustersGroup = `group -n ($baseName+"_clusters_group") -em -p $startLocator`;
+	setAttr ($clustersGroup+".v") false;
+
+	lockAttrs($clustersGroup,{1,1,1},{1,1,1},{1,1,1},1);
+	//---
+	string $tmp[] = `listRelatives -s $startLocator[0]`; // ñêðûòü øåéïû ëîêàòîðîâ è çàëî÷èòü èõ âèäèìîñòü
+	setAttr -l true ($tmp[0]+".v") false;
+
+	$tmp = `listRelatives -s $endLocator[0]`;
+	setAttr -l true ($tmp[0]+".v") false;
+	//---
+	for ($i=1;$i<=$numControls;$i++){
+
+		string $mult = `createNode multiplyDivide -n ($baseName+"_poser"+$i+"_multiplyDivide ")`; // íîä âû÷èñëÿåò ïîëîæåíèå äëÿ êàæäîãî ñóñòàâà èñõîäÿ èç ïðîöåíòíîãî ñîîòíîøåíèÿ
+		connectAttr ($endLocator[0]+".tx") ($mult+".input1X");
+		setAttr ($mult+".input2X") (($i-1)/(float)($numControls-1));
+
+		connectAttr ($endLocator[0]+".rx") ($mult+".input1Y");
+		setAttr ($mult+".input2Y") (($i-1)/(float)($numControls-1));
+
+		string $group = `group -n ($baseName+"_control"+$i+"_group") -em -p $startLocator`;
+		connectAttr ($mult+".outputX") ($group+".tx");
+		connectAttr ($mult+".outputY") ($group+".rx");
+
+		string $control = `group -n ($baseName+"_control"+$i) -em -p $group`;
+
+		string $cluster[] = `cluster -n ($baseName+"_cluster"+$i) ($lattice[1]+".pt["+($i-1)+"][0:1][0:1]")`;
+		parent $cluster[1] $clustersGroup;
+		parentConstraint $control $cluster[1];
+
+		createControl("sphere",{$control,$control},{0.2,1.0,0},"stretchRig");
+
+		lockAttrs($group,{1,1,1},{1,1,1},{1,1,1},1);
+		lockAttrs($control,{0,0,0},{1,1,1},{1,1,1},1);
+		lockAttrs($group,{1,1,1},{1,1,1},{1,1,1},1);
+	} // for
+
+	// Îãðàíè÷åíèÿ
+	for ($i=1;$i<=`size $constraints`;$i++){
+		if (`objExists $constraints[$i-1]`){
+			pointConstraint $constraints[$i-1] ($baseName+"_control"+$i);
+
+			lockAttrs ($baseName+"_control"+$i+"_group",{1,1,1},{1,1,1},{1,1,1},0);
+			setAttr ($baseName+"_control"+$i+"_group.v") false;
+			lockAttrs ($baseName+"_control"+$i+"_group",{1,1,1},{1,1,1},{1,1,1},1);
+		}// if objExists
+	}// for
+
+	// Óñòàíîâêà ïîçèöèè è îðèåíòàöèè
+	pointConstraint $points[0] $startLocator[0];
+	pointConstraint -skip y -skip z $points[1] $endLocator[0];
+
+	orientConstraint $rotates[0] $startLocator[0];
+	orientConstraint -mo $rotates[1] $endRotator;
+	orientConstraint -skip y -skip z $endRotator $endLocator[0];
+
+	lockAttrs($startLocator[0],{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($endLocator[0],{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($endRotator,{1,1,1},{1,1,1},{1,1,1},1);
+
+} // createStretchRig
+//-------------------------------------------------------------------------------------------------------
+proc createArmLeg (string $pref,  // ïðåôèêñ,  "l_" èëè "r_"
+ 				      string $type, //  arm èëè leg
+				      int $stretch, // èñïîëüçîâàòü ëè ñòðåò÷?
+				      int $stretchRigParams[] // ÷èñëî ñóñòàâîâ è ÷èñëî êîíòðîëîâ íà ñòðåò÷ ðèã
+				      ){
+	/*
+	Ñîçäàíèå ðèãà ðóêè è íîãè. Ñòðåò÷, äîïîëíèòåëüíûå àòðèáóòû è ò.ä.
+	*/
+	// Íàçâàíèÿ ãðóïï è ò.ä. â âèäå êîíñòàíò
+	string $AdditionalJoints[] = {}; // äîïîëíèòåëüíûå ñóñòàâû âðîäå ðîäèòåëÿ, êèñòè è ò.ä.
+
+	string $ArmTunerLabel; // òþíåð äëÿ ïåðâîé êîñòè
+	string $ElbowTunerLabel; // äëÿ âòîðîé
+	string $HandTunerLabel; // è äëÿ òðåòüåé
+
+	string $ControlsLabel; // íàçâàíèå ãðóïïû ñ ýëåìåíòàìè óïðàâëåíèÿ
+	string $ArmControlsLabel; // íàçâàíèå êîíêðåòíîé ãðóïïû ñ ýëåìåíòàìè óïðàâëåíèÿ. Íàïðèìåð, l_arm_controls
+	string $ArmIKControlsLabel; // íàçâàíèå ãðóïïû äëÿ IK ýëåìåíòîâ
+	string $ArmFKControlsLabel; // íàçâàíèå ãðóïïû äëÿ FK ýëåìåíòîâ
+
+	string $ArmControlLabel; // íàçâàíèå ýëåìåíòà äëÿ ïåðåêëþ÷åíèÿ ðåæèìîâ IK FK
+
+	string $ArmJointsLabel; // êàê áóäåò íàçûâàòüñÿ ãðóïïà ñ êîñòÿìè
+
+	string $ArmLabel; // îáùåå áàçîâîå íàçâàíèå ñèñòåìû. Ñêàæåì,  arm, leg
+
+	string $ArmIKLabel; // íàçâàíèå ýëåìåíòà äëÿ IK
+	string $ElbowIKLabel; // ëîêòåâîé ïîëåâåêòîð
+
+	string $ArmFixLabel; // íàçâàíèå äëÿ ElbowFix êîñòåé
+	string $FixLabel; // êàê áóäåò íàçûâàòüñÿ àòðèáóò äëÿ ïåðåêëþ÷åíèÿ ElbowFix
+
+	string $ArmFKLabel; // íàçâàíèå ïåðâîãî FK  ýëåìåíòà
+	string $ElbowFKLabel;  // íàçâàíèå âòîðîãî FK  ýëåìåíòà
+	string $HandFKLabel; //  // íàçâàíèå òðåòüåãî FK  ýëåìåíòà
+
+	$ControlsLabel = "controls";
+
+	if ($type=="arm"){ // ñîçäàíèå ðóêè
+
+		$AdditionalJoints = {$pref+"shoulder3_joint",$pref+"hand1_joint",$pref+"shoulder2_stretchRig_control2","clavicle_joint"}; // 0 - ïàðåíò
+
+		$ArmTunerLabel = "arm_tuner";
+		$ElbowTunerLabel = "elbow_tuner";
+		$HandTunerLabel = "hand_tuner";
+
+		$ArmControlsLabel = "arm_controls";
+		$ArmIKControlsLabel = "armIK_controls";
+		$ArmFKControlsLabel = "armFK_controls";
+
+		$ArmControlLabel = "arm_control";
+
+		$ArmJointsLabel = "arm_joints";
+
+		$ArmLabel = "arm";
+
+		$ArmIKLabel = "armIK";
+		$ElbowIKLabel = "elbowIK";
+
+		$ArmFixLabel = "armElbowFix";
+		$FixLabel = "elbowFix";
+
+		$ArmFKLabel = "armFK";
+		$ElbowFKLabel = "elbowFK";
+		$HandFKLabel = "handFK";
+
+	} // arm
+	else if ($type=="leg"){  // ñîçäàíèå íîãè
+
+		$AdditionalJoints = {"hip_joint",$pref+"footAux1_joint",$pref+"foot1_joint",$pref+"footAux9_joint",$pref+"foot"};
+
+		$ArmTunerLabel = "leg_tuner";
+		$ElbowTunerLabel = "knee_tuner";
+		$HandTunerLabel = "foot1_tuner";
+
+		$ArmControlsLabel = "leg_controls";
+		$ArmIKControlsLabel = "legIK_controls";
+		$ArmFKControlsLabel = "legFK_controls";
+
+		$ArmControlLabel = "leg_control";
+
+		$ArmJointsLabel = "leg_joints";
+
+		$ArmLabel = "leg";
+
+		$ArmIKLabel = "legIK";
+		$ElbowIKLabel = "kneeIK";
+
+		$ArmFixLabel = "legKneeFix";
+		$FixLabel = "kneeFix";
+
+		$ArmFKLabel = "legFK";
+		$ElbowFKLabel = "kneeFK";
+		$HandFKLabel = "footFK";
+	} // leg
+	else error "createArmLeg: $type must be 'arm' or 'leg'";
+
+	//----------------------------------------------------------------------------------------------------------
+	select -cl;
+
+	float $arm1Pos[] = `getAttr ($pref+$ArmTunerLabel+".worldPosition")`;
+	float $arm2Pos[] = `getAttr ($pref+$ElbowTunerLabel+".worldPosition")`;
+	float $arm3Pos[] = `getAttr ($pref+$HandTunerLabel+".worldPosition")`;
+
+	vector $armElbow = <<$arm2Pos[0]-$arm1Pos[0], $arm2Pos[1]-$arm1Pos[1], $arm2Pos[2]-$arm1Pos[2]>>;
+	vector $elbowHand = <<$arm3Pos[0]-$arm2Pos[0], $arm3Pos[1]-$arm2Pos[1], $arm3Pos[2]-$arm2Pos[2]>>;
+
+	float $magArmElbow = `mag $armElbow`;
+	float $magElbowHand = `mag $elbowHand`;
+
+	string $armJoints[] = {};
+
+	if ($type=="arm"){
+		float $coeff = 1;
+		float $orient[] = {0,0,0};
+
+		if ($pref=="r_") {// äëÿ ñèììåòðèè
+			$coeff = 1;// -1
+			$orient = {0,0,0}; // 180 0 0
+		}// r_
+
+		$armJoints[0] = `joint -p 0 0 0 `;
+		$armJoints[1] = `joint -p ($coeff*$magArmElbow) 0 0`;
+		$armJoints[2] = `joint -p ($coeff*$magArmElbow+$coeff*$magElbowHand) 0 0`;
+
+		setAttr ($armJoints[0]+".jointOrient") $orient[0] $orient[1] $orient[2];
+
+		setAttr ($armJoints[1]+".preferredAngleY") -45;
+	} // arm
+	else{ // leg
+		float $coeff = 1;
+		float $orient[] = {180,0,0};//180 0 0
+
+		if ($pref=="r_") {
+			$coeff = 1;
+			$orient = {180,0,0};
+		}// r_
+
+		$armJoints[0] = `joint -p 0 0 0 `;
+		$armJoints[1] = `joint -p ($coeff*$magArmElbow) 0 0`;
+		$armJoints[2] = `joint -p ($coeff*$magArmElbow+$coeff*$magElbowHand) 0 0`;
+
+		setAttr ($armJoints[0]+".jointOrient") $orient[0] $orient[1] $orient[2];
+
+		setAttr ($armJoints[1]+".preferredAngleY") -45;
+	} // leg
+
+	string $IK[] = `ikHandle -startJoint $armJoints[0] -endEffector $armJoints[2] -solver "ikRPsolver"`;
+
+	xform -ws -t $arm1Pos[0] $arm1Pos[1] $arm1Pos[2] $armJoints[0]; // ïîçèöèîíèðîâàíèå ðóêè èëè íîãè
+	xform -ws -t $arm3Pos[0] $arm3Pos[1] $arm3Pos[2] $IK[0];
+
+	delete `poleVectorConstraint ($pref+$ElbowTunerLabel) $IK[0]`;
+
+	string $chain[] = `duplicate -rc $armJoints[0]`;
+	for ($i=0;$i<3;$i++)	{
+		$chain[$i] = `rename $chain[$i] ($pref+$ArmLabel+($i+1)+"_joint")`;
+
+		orientConstraint $armJoints[$i] $chain[$i]; // âûðîâíÿòü íîâûå êîñòè
+	} // for
+
+	delete `listRelatives -ad -type ikEffector $chain[0]`; // óäàëèòü âñå effector
+
+	delete $armJoints[0];
+	//--------------------------------------------------------------
+	group -n ($pref+$ArmControlsLabel) -em -parent $ControlsLabel;
+	group -n ($pref+$ArmIKControlsLabel) -em -p ($pref+$ArmControlsLabel);
+	group -n ($pref+$ArmFKControlsLabel) -em -p ($pref+$ArmControlsLabel);
+
+	// ñîçäàíèå äîïîëíèòåëüíûõ ñèñòåì è ïåðåèìåíîâêà
+	string $chainFK[] = `duplicate -rc $chain[0]`;
+	for ($i=0;$i<3;$i++)	$chainFK[$i] = `rename $chainFK[$i] ($pref+$ArmLabel+"FK"+($i+1)+"_joint")`;
+
+	string $chainIK[] = `duplicate -rc $chain[0]`;
+	for ($i=0;$i<3;$i++)	$chainIK[$i] = `rename $chainIK[$i] ($pref+$ArmLabel+"IK"+($i+1)+"_joint")`;
+
+	string $chainFix[] = `duplicate -rc $chain[0]`;
+	for ($i=0;$i<3;$i++)	$chainFix[$i] = `rename $chainFix[$i] ($pref+$ArmLabel+"Fix"+($i+1)+"_joint")`;
+
+	string $chainNoRotate[] = `duplicate -rc $chain[0]`; // ñèñòåìà äëÿ êîððåêòíîãî âðàùåíèÿ ïëå÷à
+	for ($i=0;$i<3;$i++)	$chainNoRotate[$i] = `rename $chainNoRotate[$i] ($pref+$ArmLabel+"NoRotate"+($i+1)+"_joint")`;
+
+	delete $chainNoRotate[2]; // îñòàâèòü òîëüêî ïëå÷î
+
+	group -n ($pref+$ArmJointsLabel) -p "skeleton" $chain[0] $chainIK[0] $chainFK[0] $chainFix[0] $chainNoRotate[0];
+
+	setAttr ($chainIK[0]+".v") false;
+	setAttr ($chainFK[0]+".v") false;
+	setAttr ($chainFix[0]+".v") false;
+	setAttr ($chainNoRotate[0]+".v") false;
+	//---------------------------------------------------------------
+	// Âñïîìîãàòåëüíàÿ ñèñòåìà äëÿ ïðàâèëüíîãî âðàùåíèÿ ïëå÷à
+	$IK = `ikHandle -n ($pref+$ArmLabel+"NoRotate_IKHandle") -startJoint $chainNoRotate[0] -endEffector $chainNoRotate[1] -solver "ikSCsolver"`;
+	pointConstraint $chain[1] $IK[0];
+	parent $IK[0] ($pref+$ArmJointsLabel);
+
+	setAttr ($IK[0]+".v") false;
+
+	lockAttrs($IK[0],{0,0,0},{0,0,0},{1,1,1},1);
+	// --------------------------------------------------------------
+	group -n ($pref+$ArmControlLabel) -em -p ($pref+$ArmControlsLabel);
+	parentConstraint $chain[2] ($pref+$ArmControlLabel);
+
+	addAttr -ln "kinematic"  -at double  -min 0 -max 1 -dv 0 -k true ($pref+$ArmControlLabel);
+
+	string $plus = connect_10_01($pref+$ArmControlLabel+".kinematic",{$pref+$ArmIKControlsLabel+".v"},{$pref+$ArmFKControlsLabel+".v"});
+
+	for ($i=0;$i<3;$i++){
+		string $pc[] = `parentConstraint $chainIK[$i] $chainFK[$i] $chain[$i]`;
+
+		connectAttr ($plus+".output2Dx") ($pc[0]+"."+$chainIK[$i]+"W0");
+		connectAttr ($plus+".output2Dy") ($pc[0]+"."+$chainFK[$i]+"W1");
+	} // for
+	//----------------------------------------------------------------------------
+	// Íàñòðîéêà îòäåëüíûõ ñèñòåì
+	// IK
+	$IK = `ikHandle -n ($pref+$ArmLabel+"IK_IKHandle") -startJoint $chainIK[0] -endEffector $chainIK[2] -solver "ikRPsolver"`;
+
+	parent $IK[0] ($pref+$ArmJointsLabel);
+
+	setAttr ($IK[0]+".v") false;
+	lockAttrs($IK[0],{0,0,0},{1,1,1},{1,1,1},1);
+
+	string $IK1[] = `ikHandle -n ($pref+$ArmLabel+"Fix1_IKHandle") -startJoint $chainFix[0] -endEffector $chainFix[1] -solver "ikRPsolver"`;
+	string $IK2[] = `ikHandle -n ($pref+$ArmLabel+"Fix2_IKHandle") -startJoint $chainFix[1] -endEffector $chainFix[2] -solver "ikRPsolver"`;
+
+	parent $IK1[0] ($pref+$ArmJointsLabel);
+	setAttr ($IK1[0]+".v") false;
+
+	parent $IK2[0] ($pref+$ArmJointsLabel);
+	setAttr ($IK2[0]+".v") false;
+
+	lockAttrs($IK1[0],{0,0,0},{1,1,1},{1,1,1},1);
+	lockAttrs($IK2[0],{0,0,0},{1,1,1},{1,1,1},1);
+	//--------------------------------------------------------------------------------
+	// Ìàíèïóëÿòîð ðóêîé â ðåæèìå IK
+	group -n ($pref+$ArmIKLabel+"_dynamicParent_group") -em -p ($pref+$ArmIKControlsLabel); // ãðóïïà äëÿ äèíàìè÷åñêîãî ïàðåíòà
+	group -n ($pref+$ArmIKLabel+"_group") -em -p ($pref+$ArmIKLabel+"_dynamicParent_group"); // ãðóïïà äëÿ îðèåíòèðîâàíèÿ ÈÊ
+
+	delete `parentConstraint ($pref+$HandTunerLabel) ($pref+$ArmIKLabel+"_group")`; // âûðîâíÿòü ÈÊ ýëåìåíò ïî òþíåðó
+
+	group -n ($pref+$ArmIKLabel+"_userParent") -em -p ($pref+$ArmIKControlsLabel); //äèíàìè÷åñêèé ïàðåíò ê ïóñòîé ãðóïïå
+
+	group -n ($pref+$ArmIKLabel) -em -p ($pref+$ArmIKLabel+"_group");
+	xform -ws -t $arm3Pos[0] $arm3Pos[1] $arm3Pos[2] ($pref+$ArmIKLabel);
+	makeIdentity -apply true -t 1 -r 1 -s 1 -n 0 ($pref+$ArmIKLabel);
+
+	if ($type=="leg") setAttr ($pref+$ArmIKLabel+".rotateOrder") 3;// xzy
+
+	addAttr -ln $FixLabel  -at double  -min 0 -max 1 -dv 0 -k true ($pref+$ArmIKLabel);
+	string $pc[] = `pointConstraint ($pref+$ArmIKLabel) $chainFix[2] ($pref+$ArmLabel+"IK_IKHandle")`;
+	connect_10_01($pref+$ArmIKLabel+"."+$FixLabel,{$pc[0]+"."+$pref+$ArmIKLabel+"W0"},{$pc[0]+"."+$chainFix[2]+"W1"});
+
+	//------------------------
+	// Ïîëå âåêòîð ëîêòÿ
+	string $grp = `group -em -n ($pref+$ElbowIKLabel+"_poser") -p $chainFK[1]`; // âñïîìîãàòåëüíûé îáúåêò äëÿ ïîçèöèîíèðîâàíèÿ ëîêòÿ
+
+	setAttr ($grp+".t") 0 0 (($magArmElbow+$magElbowHand)/-4.0);
+
+	lockAttrs($grp,{1,1,1},{1,1,1},{1,1,1},1);
+
+	group -n ($pref+$ElbowIKLabel+"_dynamicParent_group") -em -p ($pref+$ArmIKControlsLabel); // ãðóïïà äëÿ äèíàìè÷åñêîãî ïàðåíòà ëîêòåâîãî ïîëåâåêòîðà
+
+	group -n ($pref+$ElbowIKLabel) -em -p ($pref+$ElbowIKLabel+"_dynamicParent_group");
+	delete `pointConstraint ($pref+$ElbowIKLabel+"_poser") ($pref+$ElbowIKLabel)`;
+	makeIdentity -apply true -t 1 -r 1 -s 1 -n 0 ($pref+$ElbowIKLabel);
+
+	poleVectorConstraint ($pref+$ElbowIKLabel) ($pref+$ArmLabel+"IK_IKHandle");
+
+	poleVectorConstraint ($pref+$ElbowIKLabel) ($pref+$ArmLabel+"Fix1_IKHandle");
+	poleVectorConstraint ($pref+$ElbowIKLabel) ($pref+$ArmLabel+"Fix2_IKHandle");
+
+	pointConstraint ($pref+$ElbowIKLabel) ($pref+$ArmLabel+"Fix1_IKHandle");
+	pointConstraint ($pref+$ArmIKLabel) ($pref+$ArmLabel+"Fix2_IKHandle");
+	//--------------------
+	// FK
+	group -n ($pref+$ArmFKLabel+"_group") -em -p ($pref+$ArmFKControlsLabel);
+	group -n ($pref+$ArmFKLabel) -em -p ($pref+$ArmFKLabel+"_group");
+	group -n ($pref+$ElbowFKLabel+"_group") -em -p ($pref+$ArmFKLabel);
+	group -n ($pref+$ElbowFKLabel) -em -p ($pref+$ElbowFKLabel+"_group");
+	group -n ($pref+$HandFKLabel+"_group") -em -p ($pref+$ElbowFKLabel);
+	group -n ($pref+$HandFKLabel) -em -p ($pref+$HandFKLabel+"_group");
+
+	//----------------------------
+	delete `orientConstraint $chainFK[0] ($pref+$ArmFKLabel+"_group")`; // âûðîâíÿòü ÔÊ-êîíòðîëû ïî êîñòÿì
+	delete `orientConstraint $chainFK[1] ($pref+$ElbowFKLabel+"_group")`;
+
+	delete `orientConstraint ($pref+$ArmIKLabel) ($pref+$HandFKLabel+"_group")`; // âûðîâíÿòü ÔÊ ýëåìåíò ïî ÈÊ
+
+	pointConstraint $chainFK[0] ($pref+$ArmFKLabel+"_group");
+	pointConstraint $chainFK[1] ($pref+$ElbowFKLabel+"_group");
+	pointConstraint $chainFK[2] ($pref+$HandFKLabel+"_group");
+
+	orientConstraint  ($pref+$ArmFKLabel) $chainFK[0];
+
+	string $bw = `createNode blendWeighted -n ($pref+$ElbowFKLabel+"_blendWeighted")`;
+	setAttr ($bw+".i[0]") `getAttr ($chainFK[1]+".ry")`;
+	connectAttr ($pref+$ElbowFKLabel+".ry") ($bw+".i[1]");
+	connectAttr ($bw+".output") ($chainFK[1]+".ry");
+	//--------------------------------------------------------------------
+	// Äîïîëíèòåëüíûå ýëåìåíòû äëÿ áåçøâîâîãî ïåðåêëþ÷åíèÿ IK FK
+	group -n ($pref+$ArmFKLabel+"_ikRotate") -em -p ($pref+$ArmFKLabel+"_group"); // ýòà ãðóïïà íóæíà äëÿ ïåðåíîñà âðàùåíèÿ ñ ÈÊ-êîñòè íà 1-ûé ÔÊ-ýëåìåíò
+	orientConstraint $chainIK[0] ($pref+$ArmFKLabel+"_ikRotate");
+	connectAttr ($pref+$ArmFKLabel+".rotateOrder") ($pref+$ArmFKLabel+"_ikRotate.rotateOrder"); // ñâÿçàòü ïîðÿäîê îñåé âðàùåíèÿ
+
+	group -n ($pref+$HandFKLabel+"_ikRotate") -em -p ($pref+$HandFKLabel+"_group"); // ïåðåíîñ âðàùåíèÿ ñ 3-åãî ÔÊ-ýëåìåíòà íà ÈÊ-êîíòðîëëåð
+	orientConstraint -mo ($pref+$ArmIKLabel) ($pref+$HandFKLabel+"_ikRotate");
+	connectAttr ($pref+$HandFKLabel+".rotateOrder") ($pref+$HandFKLabel+"_ikRotate.rotateOrder"); // ñâÿçàòü ïîðÿäîê îñåé âðàùåíèÿ
+
+	lockAttrs($pref+$ArmFKLabel+"_ikRotate",{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($pref+$HandFKLabel+"_ikRotate",{1,1,1},{1,1,1},{1,1,1},1);
+	//--
+	group -n ($pref+$ArmIKLabel+"_dynamicParentPoser") -em -p ($pref+$ArmIKLabel+"_group"); // âñïîìîãàòåëüíûé îáúåêò äëÿ áåçøâîâîãî äèíàìè÷åñêîãî ïàðåíòà
+	xform -ws -t $arm3Pos[0] $arm3Pos[1] $arm3Pos[2]  ($pref+$ArmIKLabel+"_dynamicParentPoser");
+	makeIdentity -apply true -t 1 -r 1 -s 1 -n 0 ($pref+$ArmIKLabel+"_dynamicParentPoser");
+
+	connectAttr ($pref+$ArmIKLabel+".rotateOrder") ($pref+$ArmIKLabel+"_dynamicParentPoser.rotateOrder"); // ñâÿçàòü ïîðÿäîê îñåé âðàùåíèÿ
+
+	group -n ($pref+$ArmIKLabel+"_fkTranslateRotate") -em -p ($pref+$ArmIKLabel+"_group"); // ïîçèöèîíèðîâàíèå è îðèåíòàöèÿ ÈÊ-êîíòðîëëåðà ïðè ïåðåêëþ÷åíèè
+	xform -ws -t $arm3Pos[0] $arm3Pos[1] $arm3Pos[2]  ($pref+$ArmIKLabel+"_fkTranslateRotate");
+	makeIdentity -apply true -t 1 -r 1 -s 1 -n 0 ($pref+$ArmIKLabel+"_fkTranslateRotate");
+
+	connectAttr ($pref+$ArmIKLabel+".rotateOrder") ($pref+$ArmIKLabel+"_fkTranslateRotate.rotateOrder"); // ñâÿçàòü ïîðÿäîê îñåé âðàùåíèÿ
+
+	pointConstraint $chainFK[2] ($pref+$ArmIKLabel+"_fkTranslateRotate");
+	orientConstraint -mo ($pref+$HandFKLabel) ($pref+$ArmIKLabel+"_fkTranslateRotate");
+
+	lockAttrs($pref+$ArmIKLabel+"_fkTranslateRotate",{1,1,1},{1,1,1},{1,1,1},1);
+	//---
+	group -n ($pref+$ElbowIKLabel+"_dynamicParentPoser") -em -p ($pref+$ElbowIKLabel+"_dynamicParent_group"); // âñïîìîãàòåëüíûé îáúåêò äëÿ áåçøâîâîãî äèíàìè÷åñêîãî ïàðåíòà
+	delete `pointConstraint ($pref+$ElbowIKLabel+"_poser") ($pref+$ElbowIKLabel+"_dynamicParentPoser")`;
+	makeIdentity -apply true -t 1 -r 1 -s 1 -n 0 ($pref+$ElbowIKLabel+"_dynamicParentPoser");
+
+	group -n ($pref+$ElbowIKLabel+"_fkTranslate") -em -p ($pref+$ElbowIKLabel+"_dynamicParent_group"); // ïîçèöèîíèðîâàíèå ëîêòåâîãî ïîëåâåêòîðà ïðè ïåðåêëþ÷åíèè
+	delete `pointConstraint ($pref+$ElbowIKLabel+"_poser") ($pref+$ElbowIKLabel+"_fkTranslate")`;
+	makeIdentity -apply true -t 1 -r 1 -s 1 -n 0 ($pref+$ElbowIKLabel+"_fkTranslate");
+
+	pointConstraint ($pref+$ElbowIKLabel+"_poser") ($pref+$ElbowIKLabel+"_fkTranslate");
+	lockAttrs($pref+$ElbowIKLabel+"_fkTranslate",{1,1,1},{1,1,1},{1,1,1},1);
+
+	// Áåçøâîâîå ïåðåêëþ÷åíèå ñèñòåì
+	addAttr -ln ($pref+$type+"_ik2fk_script")  -dt "string"  "preferences";
+	addAttr -ln ($pref+$type+"_fk2ik_script")  -dt "string"  "preferences";
+
+	string $ik2fk_script = ""; // ñêðèïò äëÿ ïåðåêëþ÷åíèÿ èç ôê â èê
+
+	if ($type=="leg" && `objExists $AdditionalJoints[1]`) {
+		// äàííûé ñêðèïò ñáðàñûâàåò çíà÷åíèÿ ó êîíòðîëëåða foot ïðè ïåðåêëþ÷åíèè êèíåìàòèê!
+		string $foot_leg_scriptAux = "{setAttr NAMESPACE"+$AdditionalJoints[4]+".rx 0;setAttr NAMESPACE"+$AdditionalJoints[4]+".rz 0;setAttr NAMESPACE"+$AdditionalJoints[4]+".heelToToes 0;setAttr NAMESPACE"+$AdditionalJoints[4]+".toesSide 0;setAttr NAMESPACE"+$AdditionalJoints[4]+".heelSide 0;}";
+		$ik2fk_script = $foot_leg_scriptAux;
+	}// if leg
+
+	$ik2fk_script += "{setAttr NAMESPACE"+$pref+$ElbowIKLabel+".minSquash 1;setAttr NAMESPACE"+$pref+$ArmIKLabel+".minSquash 1;float $posIK[] = `getAttr NAMESPACE"+$pref+$ArmIKLabel+"_fkTranslateRotate.t`;float $rotIK[] = `xform -q -ws -ro NAMESPACE"+$pref+$ArmIKLabel+"_fkTranslateRotate`;float $posElbow[] = `getAttr NAMESPACE"+$pref+$ElbowIKLabel+"_fkTranslate.t`;setAttr NAMESPACE"+$pref+$ArmIKLabel+".t $posIK[0] $posIK[1] $posIK[2];xform -ws -ro $rotIK[0] $rotIK[1] $rotIK[2] NAMESPACE"+$pref+$ArmIKLabel+";setAttr NAMESPACE"+$pref+$ElbowIKLabel+".t $posElbow[0] $posElbow[1] $posElbow[2];}";
+
+	setAttr ("preferences."+$pref+$type+"_ik2fk_script") -type "string" $ik2fk_script;
+	setAttr -l true ("preferences."+$pref+$type+"_ik2fk_script");
+	//------------------
+	string $fk2ik_script = ""; // ñêðèïò äëÿ ïåðåêëþ÷åíèÿ èç èê â ôê
+
+	string $setScaleFactors_script = "{float $s1[] = `getAttr NAMESPACE"+$chainIK[0]+".s`;float $s2[] = `getAttr NAMESPACE"+$chainIK[1]+".s`;setAttr NAMESPACE"+$pref+$ArmControlLabel+".scaleFactor1X $s1[0];setAttr NAMESPACE"+$pref+$ArmControlLabel+".scaleFactor1Y $s1[1];setAttr NAMESPACE"+$pref+$ArmControlLabel+".scaleFactor2X $s2[0];setAttr NAMESPACE"+$pref+$ArmControlLabel+".scaleFactor2Y $s2[1];}";
+
+	$fk2ik_script += "{float $rot[] = `getAttr NAMESPACE"+$pref+$ArmFKLabel+"_ikRotate.r`;setAttr NAMESPACE"+$pref+$ArmFKLabel+".r $rot[0] $rot[1] $rot[2];float $rotY = `getAttr NAMESPACE"+$pref+$ArmIKLabel+"2_joint.ry`;float $rotYTmp = `getAttr NAMESPACE"+$pref+$ElbowFKLabel+"_group.ry`;setAttr NAMESPACE"+$pref+$ElbowFKLabel+".ry ($rotY-$rotYTmp);float $rot[] = `xform -q -ws -ro NAMESPACE"+$pref+$HandFKLabel+"_ikRotate`;xform -ws -ro $rot[0] $rot[1] $rot[2] NAMESPACE"+$pref+$HandFKLabel+";}";
+	$fk2ik_script += $setScaleFactors_script;
+
+	setAttr ("preferences."+$pref+$type+"_fk2ik_script") -type "string" $fk2ik_script;
+	setAttr -l true ("preferences."+$pref+$type+"_fk2ik_script");
+
+	//----------------------------------------------------------------------------------
+	// Ðàñòÿæåíèå ñèñòåì..
+
+	if ($stretch){
+
+		// Length Factors
+		addAttr -ln "scaleFactor1X"  -at double -min 0.01 -dv 1 -k true ($pref+$ArmControlLabel);
+		addAttr -ln "scaleFactor1Y"  -at double -min 0.01 -dv 1 -k true ($pref+$ArmControlLabel);
+
+		addAttr -ln "scaleFactor2X"  -at double -min 0.01 -dv 1 -k true ($pref+$ArmControlLabel);
+		addAttr -ln "scaleFactor2Y"  -at double -min 0.01 -dv 1 -k true ($pref+$ArmControlLabel);
+
+		// Stretch FK è IK íà îñíîâíóþ ñèñòåìó
+		for ($i=0;$i<2;$i++){
+			string $b2 = `createNode blendTwoAttr -n ($chain[$i]+"_sx_blendTwoAttr")`;
+			connectAttr  ($chainIK[$i]+".sx") ($b2+".i[0]");
+			connectAttr  ($chainFK[$i]+".sx") ($b2+".i[1]");
+
+			connectAttr ($b2+".output") ($chain[$i]+".sx");
+			connectAttr  ($pref+$ArmControlLabel+".kinematic") ($b2+".attributesBlender");
+
+			$b2 = `createNode blendTwoAttr -n ($chain[$i]+"_sy_blendTwoAttr")`;
+			connectAttr  ($chainIK[$i]+".sy") ($b2+".i[0]");
+			connectAttr  ($chainFK[$i]+".sy") ($b2+".i[1]");
+
+			connectAttr ($b2+".output") ($chain[$i]+".sy");
+			connectAttr ($b2+".output") ($chain[$i]+".sz");
+			connectAttr  ($pref+$ArmControlLabel+".kinematic") ($b2+".attributesBlender");
+		} // for
+
+		// IK stretch
+
+		addAttr -ln "stretch"  -at double -min 0 -max 1 -dv 0 -k true ($pref+$ArmIKLabel);
+		addAttr -ln "minSquash"  -at double  -min 0.1 -max 1 -dv 1 -k true ($pref+$ArmIKLabel);
+		addAttr -ln "saveVolume"  -at double  -min 0 -max 1 -dv 1 -k true ($pref+$ArmIKLabel);
+		addAttr -ln "distanceCoeff"  -at double  -min -1 -max 0 -dv 0 -k true ($pref+$ArmIKLabel);
+
+		string $endJoint = ""; // êîíå÷íûé îáúåêò äëÿ ñòðåò÷à
+
+		if ($type=="arm") $endJoint = $pref+$ArmIKLabel;
+		else
+			if (`objExists $AdditionalJoints[3]`) $endJoint = $AdditionalJoints[3];
+			else $endJoint = $pref+$ArmIKLabel;
+
+		createDistance($pref+$ArmIKLabel+"_distance",$chainIK[0],$endJoint);
+
+		addAttr -ln "stretch"  -at double -min 0 -max 1 -dv 0 -k true ($pref+$ElbowIKLabel);
+		addAttr -ln "minSquash"  -at double  -min 0.1 -max 1 -dv 1 -k true ($pref+$ElbowIKLabel);
+		addAttr -ln "saveVolume"  -at double  -min 0 -max 1 -dv 1 -k true ($pref+$ElbowIKLabel);
+
+		createDistance($pref+$ArmFixLabel+"12_distance",$chainFix[0],$pref+$ElbowIKLabel);
+		createDistance($pref+$ArmFixLabel+"23_distance",$chainFix[1],$pref+$ArmIKLabel);
+
+		// stretch Fix1
+		string $multScaleScaleFactor1X = `createNode multDoubleLinear -n ($chainIK[0]+"_scaleScaleFactor1X_multDoubleLinear")`;
+		connectAttr ("main.scaleFactor") ($multScaleScaleFactor1X+".input1");
+		connectAttr ($pref+$ArmControlLabel+".scaleFactor1X") ($multScaleScaleFactor1X+".input2");
+
+		string $mult2 = `createNode multDoubleLinear -n ($chainFix[0]+"_scaleDistance12_multDoubleLinear")`;
+		setAttr ($mult2+".input1") $magArmElbow;
+		connectAttr ($multScaleScaleFactor1X+".output") ($mult2+".input2");
+
+		string $resFix1[] =
+		stretchNodes(1,1,true, $pref+$ArmLabel+"Fix","_joint",
+						 $pref+$ElbowIKLabel+".stretch",
+						 $pref+$ElbowIKLabel+".minSquash",
+						 $pref+$ElbowIKLabel+".saveVolume",
+						 $pref+$ArmFixLabel+"12_distance.distance",
+						 $mult2+".output");
+
+		string $mult3 = `createNode multDoubleLinear -n ($chainFix[0]+"_sx_multDoubleLinear")`;
+		connectAttr ($pref+$ArmControlLabel+".scaleFactor1X") ($mult3+".input1");
+		connectAttr ($resFix1[2]+".output") ($mult3+".input2");
+
+		connectAttr -f ($mult3+".output") ($chainFix[0]+".sx");
+		//--------
+		string $mult4 = `createNode multDoubleLinear -n ($chainFix[0]+"_sy_multDoubleLinear")`; // scaleFactor1Y
+		connectAttr ($pref+$ArmControlLabel+".scaleFactor1Y") ($mult4+".input1");
+		connectAttr ($resFix1[3]+".output") ($mult4+".input2");
+
+		connectAttr -f ($mult4+".output") ($chainFix[0]+".sy");
+		connectAttr -f ($mult4+".output") ($chainFix[0]+".sz");
+		//-----------------------
+		// stretch Fix2
+		string $multScaleScaleFactor2X = `createNode multDoubleLinear -n ($chainIK[1]+"_scaleScaleFactor2X_multDoubleLinear")`;
+		connectAttr ("main.scaleFactor") ($multScaleScaleFactor2X+".input1");
+		connectAttr ($pref+$ArmControlLabel+".scaleFactor2X") ($multScaleScaleFactor2X+".input2");
+
+		$mult2 = `createNode multDoubleLinear -n ($chainFix[1]+"_scaleDistance23_multDoubleLinear")`;
+		setAttr ($mult2+".input1") $magElbowHand;
+		connectAttr ($multScaleScaleFactor2X+".output") ($mult2+".input2");
+
+		string $resFix2[] =
+		stretchNodes(2,2,true, $pref+$ArmLabel+"Fix","_joint",
+						 $pref+$ArmIKLabel+".stretch",
+						 $pref+$ArmIKLabel+".minSquash",
+						 $pref+$ArmIKLabel+".saveVolume",
+						 $pref+$ArmFixLabel+"23_distance.distance",
+						 $mult2+".output");
+
+		$mult3 = `createNode multDoubleLinear -n ($chainFix[1]+"_sx_multDoubleLinear")`;
+		connectAttr ($pref+$ArmControlLabel+".scaleFactor2X") ($mult3+".input1");
+		connectAttr ($resFix2[2]+".output") ($mult3+".input2");
+
+		connectAttr -f ($mult3+".output") ($chainFix[1]+".sx");
+		//------
+		$mult4 = `createNode multDoubleLinear -n ($chainFix[1]+"_sy_multDoubleLinear")`; // scaleFactor2Y
+		connectAttr ($pref+$ArmControlLabel+".scaleFactor2Y") ($mult4+".input1");
+		connectAttr ($resFix2[3]+".output") ($mult4+".input2");
+
+		connectAttr -f ($mult4+".output") ($chainFix[1]+".sy");
+		connectAttr -f ($mult4+".output") ($chainFix[1]+".sz");
+
+		// stretch IK ----------------------------------------
+		string $mult2_1 = `createNode multDoubleLinear -n ($chainIK[0]+"_scaleDistance_multDoubleLinear")`;
+		setAttr ($mult2_1+".input1") $magArmElbow;
+		connectAttr ($multScaleScaleFactor1X+".output") ($mult2_1+".input2");
+
+		string $mult2_2 = `createNode multDoubleLinear -n ($chainIK[1]+"_scaleDistance_multDoubleLinear")`;
+		setAttr ($mult2_2+".input1") $magElbowHand;
+		connectAttr ($multScaleScaleFactor2X+".output") ($mult2_2+".input2");
+		//--------
+		string $bw = `createNode blendWeighted -n ($pref+$ArmIKLabel+"_sumScaleDistances_blendWeighted")`;
+		connectAttr ($mult2_1+".output") ($bw+".i[0]");
+		connectAttr ($mult2_2+".output") ($bw+".i[1]");
+
+		string $sumCoeffs = `createNode blendWeighted -n ($pref+$ArmIKLabel+"_sumScaleCoeffs_blendWeighted")`;
+		connectAttr ($pref+$ArmIKLabel+".distanceCoeff") ($sumCoeffs+".i[0]");
+		connectAttr ($bw+".output") ($sumCoeffs+".i[1]");
+
+		string $resIK[] =
+		stretchNodes(1,2,true, $pref+$ArmIKLabel,"_joint",
+								  $pref+$ArmIKLabel+".stretch",
+								  $pref+$ArmIKLabel+".minSquash",
+								  $pref+$ArmIKLabel+".saveVolume",
+								  $pref+$ArmIKLabel+"_distance.distance",
+								  $sumCoeffs+".output");
+
+		string $multIK1x = `createNode multDoubleLinear -n ($chainIK[0]+"_sx_multDoubleLinear")`;
+		connectAttr ($pref+$ArmControlLabel+".scaleFactor1X") ($multIK1x+".input1");
+		connectAttr ($resIK[2]+".output") ($multIK1x+".input2");
+
+		string $multIK2x = `createNode multDoubleLinear -n ($chainIK[1]+"_sx_multDoubleLinear")`;
+		connectAttr ($pref+$ArmControlLabel+".scaleFactor2X") ($multIK2x+".input1");
+		connectAttr ($resIK[2]+".output") ($multIK2x+".input2");
+		//-----------
+		string $multIK1y = `createNode multDoubleLinear -n ($chainIK[0]+"_sy_multDoubleLinear")`;
+		connectAttr ($pref+$ArmControlLabel+".scaleFactor1Y") ($multIK1y+".input1");
+		connectAttr ($resIK[3]+".output") ($multIK1y+".input2");
+
+		string $multIK2y = `createNode multDoubleLinear -n ($chainIK[1]+"_sy_multDoubleLinear")`;
+		connectAttr ($pref+$ArmControlLabel+".scaleFactor2Y") ($multIK2y+".input1");
+		connectAttr ($resIK[3]+".output") ($multIK2y+".input2");
+
+		// Stretch IK è ElbowFix íà IK ñèñòåìó
+		for ($i=0;$i<2;$i++){
+			string $b2 = `createNode blendTwoAttr -n ($chainIK[$i]+"_sx_blendTwoAttr")`;
+
+			if ($i==0)	connectAttr  ($multIK1x+".output") ($b2+".i[0]");
+			if ($i==1)	connectAttr  ($multIK2x+".output") ($b2+".i[0]");
+
+			connectAttr  ($chainFix[$i]+".sx") ($b2+".i[1]");
+
+			connectAttr -f ($b2+".output") ($chainIK[$i]+".sx");
+			connectAttr  ($pref+$ArmIKLabel+"."+$FixLabel) ($b2+".attributesBlender");
+
+			$b2 = `createNode blendTwoAttr -n ($chainIK[$i]+"_sy_blendTwoAttr")`;
+
+			if ($i==0)	connectAttr  ($multIK1y+".output") ($b2+".i[0]");
+			if ($i==1)	connectAttr  ($multIK2y+".output") ($b2+".i[0]");
+
+			connectAttr  ($chainFix[$i]+".sy") ($b2+".i[1]");
+
+			connectAttr -f ($b2+".output") ($chainIK[$i]+".sy");
+			connectAttr -f ($b2+".output") ($chainIK[$i]+".sz");
+			connectAttr  ($pref+$ArmIKLabel+"."+$FixLabel) ($b2+".attributesBlender");
+		} //for
+
+		// FK stretch
+		connectAttr ($pref+$ArmControlLabel+".scaleFactor1X") ($chainFK[0]+".sx");
+		connectAttr ($pref+$ArmControlLabel+".scaleFactor1Y") ($chainFK[0]+".sy");
+		connectAttr ($pref+$ArmControlLabel+".scaleFactor1Y") ($chainFK[0]+".sz");
+
+		connectAttr ($pref+$ArmControlLabel+".scaleFactor2X") ($chainFK[1]+".sx");
+		connectAttr ($pref+$ArmControlLabel+".scaleFactor2Y") ($chainFK[1]+".sy");
+		connectAttr ($pref+$ArmControlLabel+".scaleFactor2Y") ($chainFK[1]+".sz");
+	} // stretch
+
+	// Ñèñòåìà äëÿ êîððåêòíîãî âðàùåíèÿ òâèñòîâûõ êîñòåé
+	string $endJoint = "";
+	if (`objExists $AdditionalJoints[1]`){  // åñëè åñòü êèñòü - äîáàâèòü êîñòü äëÿ êîððåêòíîãî òâèñòà çàïÿñòüÿ
+
+		string $wristTwistJoints[] = {}; // âñïîìîãàòåëüíûå êîñòè äëÿ êîððåêòîãî âðàùåíèÿ stretchRig îò ëîêòÿ ê êèñòè
+
+		$wristTwistJoints[0] = `joint -r -p 0 0 0 -n ($pref+$ArmLabel+"_wristTwist1_joint") $chain[1]`;
+		$wristTwistJoints[1] = `joint -r -p 1 0 0 -n ($pref+$ArmLabel+"_wristTwist2_joint") $wristTwistJoints[0]`;
+
+		delete `pointConstraint $chain[2] $wristTwistJoints[1] `;
+
+		for ($i=0;$i<2;$i++)	joint -e  -zso -oj xyz -sao yup $wristTwistJoints[$i];
+
+		setAttr ($wristTwistJoints[0]+".rotateOrder") 5; // zyx
+		string $IK[] = `ikHandle -n ($pref+$ArmLabel+"_wristTwist1_IKHandle") -startJoint $wristTwistJoints[0] -endEffector $wristTwistJoints[1] -solver "ikSCsolver"`;
+		parent $IK[0] $AdditionalJoints[1];
+
+		setAttr ($wristTwistJoints[0]+".v") false;
+		setAttr ($IK[0]+".v") false;
+
+		lockAttrs($wristTwistJoints[0],{0,0,0},{0,0,0},{1,1,1},1);
+		lockAttrs($IK[0],{0,0,0},{0,0,0},{0,0,0},1);
+
+		$endJoint = $wristTwistJoints[0];
+	}// if objExists
+	else $endJoint = $chain[2];
+
+	// Stretch Rigs
+	if (`size $stretchRigParams`==2){
+		string $firstConstraint = "";
+		if ($type=="arm" && `objExists $AdditionalJoints[2]`) $firstConstraint = $AdditionalJoints[2];
+		else $firstConstraint = $chain[0];
+
+		createStretchRig({$stretchRigParams[0],$stretchRigParams[1]},$pref+$ArmLabel+"1_stretchRig", {$chain[0],$chain[1]},{$chainNoRotate[0],$chain[0]},{$firstConstraint},$pref+$ArmJointsLabel);
+
+		string $constrains[] = {$pref+$ArmLabel+"1_stretchRig_control"+$stretchRigParams[1]};
+		for ($i=1;$i<$stretchRigParams[1]-1;$i++) $constrains[$i] = "";
+		$constrains[`size $constrains`] = $chain[2];
+
+		createStretchRig({$stretchRigParams[0],$stretchRigParams[1]},$pref+$ArmLabel+"2_stretchRig", {$chain[1],$chain[2]},{$chain[1],$endJoint},$constrains,$pref+$ArmJointsLabel);
+
+		setAttr ($chain[0]+".v") false; // ñêðûòü îñíîâíûå ñóñòàâû, åñëè çàäàí ñòðåò÷Ðèã
+	}// $stretchRig
+	else addToSet("bindJointsSet",{$chain[0],$chain[1]}); // äîáàâèòü áàçîâûå êîñòè â ñåò,åñëè ñòðåò÷ ðèã íå çàäàí
+
+	// Íàñòðîéêà êèñòè
+	if (`objExists $AdditionalJoints[1]`){
+		if ($type=="leg"){ // íàñòðîéêè äëÿ íîãè
+
+			pointConstraint $chain[2] $AdditionalJoints[2]; // foot1_joint
+
+			string $rel[] = `listRelatives -c -type pointConstraint ($pref+$ArmIKLabel+"_IKHandle")`;
+			for ($obj in $rel) if (`gmatch $obj "*_pointConstraint*"`) delete $obj; // óäàëèòü ïîèíò êîíñòðåéíò
+
+			string $pc[] = `pointConstraint $AdditionalJoints[3] $chainFix[2] ($pref+$ArmIKLabel+"_IKHandle")`;
+			connect_10_01($pref+$ArmIKLabel+"."+$FixLabel,{$pc[0]+"."+$AdditionalJoints[3]+"W0"},{$pc[0]+"."+$chainFix[2]+"W1"});
+			//--------
+			$pc = `pointConstraint ($pref+$ArmIKLabel) $chainFK[2]  $AdditionalJoints[1]`;
+
+			lockAttrs($AdditionalJoints[4]+"_group",{1,1,1},{1,1,1},{1,1,1},0); // ðàçëî÷èòü visibility
+			connect_10_01($pref+$ArmControlLabel+".kinematic",{$pc[0]+"."+$pref+$ArmIKLabel+"W0",$AdditionalJoints[4]+"_group.v"},{$pc[0]+"."+$chainFK[2]+"W1"});
+			lockAttrs($AdditionalJoints[4]+"_group",{1,1,1},{1,1,1},{1,1,1},0); // è îáðàòî çàëî÷èòü visibility
+
+			connectAttr ($pref+$ArmControlLabel+".kinematic") ($AdditionalJoints[4]+".kinematic");
+			setAttr -l true ($AdditionalJoints[4]+".kinematic");
+		} // $type == "leg"
+
+		string $oc[] = `orientConstraint -mo ($pref+$HandFKLabel+"_ikRotate") ($pref+$HandFKLabel)  $AdditionalJoints[1] `;
+		setAttr ($oc[0]+".interpType") 2; // shortness
+
+		connect_10_01($pref+$ArmControlLabel+".kinematic",{$oc[0]+"."+$pref+$HandFKLabel+"_ikRotateW0"},{$oc[0]+"."+$pref+$HandFKLabel+"W1"});
+
+		if ($type=="arm") pointConstraint $chain[2]  $AdditionalJoints[1];
+	} // if $AdditionalJoints[1]
+	else{
+		orientConstraint -mo ($pref+$HandFKLabel+"_ikRotate") $chainIK[2];
+		orientConstraint -mo ($pref+$HandFKLabel) $chainFK[2];
+	}//else
+
+	// Ïàðåíòèíã
+	if (`objExists  $AdditionalJoints[0]`){
+		setPivots($AdditionalJoints[0],$pref+$ArmJointsLabel); // ñîïîñòàâèòü ïèâîòû
+
+		string $pc[] = `parentConstraint -mo $AdditionalJoints[0] ($pref+$ArmJointsLabel)`; // ïðèïàðåíòèòü ñóñòàâû
+		disconnectAttr ($AdditionalJoints[0]+".scale") ($pc[0]+".target[0].targetScale"); // íå ó÷èòûâàòü ñêåéë â ïàðåíòå
+
+		if ($type == "arm"){
+			if (`objExists $AdditionalJoints[3]`)orientConstraint -mo $AdditionalJoints[3] ($pref+$ArmFKLabel+"_group"); // è ñîðèåíòèðîâàòü ÔÊ-ýëåìåíòû
+		} // arm
+		else orientConstraint -mo $AdditionalJoints[0] ($pref+$ArmFKLabel+"_group"); // è ñîðèåíòèðîâàòü ÔÊ-ýëåìåíòû íà íîãè
+
+	}// $AdditionalJoints[0]
+
+	// Íàñòðîéêà äèíàìè÷åñêîãî ïàðåíòà
+	// Ðóêà è íîãà
+	string $dynParents[] = {};
+
+	if ($type=="arm"){
+		// ðóêà è ëîêîòü
+		if (`objExists "hip_joint"`) $dynParents[`size $dynParents`] = "pelvis=hip_joint";
+		if (`objExists ($pref+"shoulder1_joint")`) $dynParents[`size $dynParents`] = "shoulder="+$pref+"shoulder1_joint";
+		if (`objExists "head_joint"`) $dynParents[`size $dynParents`] = "head=head_joint";
+		if (`size $dynParents`>0){
+			$dynParents[`size $dynParents`] = "user="+$pref+$ArmIKLabel+"_userParent";
+
+			makeDynamicParent($pref+$ArmIKLabel,$pref+$ArmIKLabel+"_dynamicParent_group",$dynParents);
+
+			$dynParents[`size $dynParents`] = "arm="+$pref+$ArmIKLabel;
+			makeDynamicParent($pref+$ElbowIKLabel,$pref+$ElbowIKLabel+"_dynamicParent_group",$dynParents);
+		} // if
+	} // arm
+	else{
+		// íîãà è êîëåíî
+		if (`objExists "hip_joint"`) $dynParents[`size $dynParents`] = "pelvis=hip_joint";
+		if (`size $dynParents`>0) {
+			$dynParents[`size $dynParents`] = "user="+$pref+$ArmIKLabel+"_userParent";
+
+			makeDynamicParent($pref+$ArmIKLabel,$pref+$ArmIKLabel+"_dynamicParent_group",$dynParents);
+
+			$dynParents[`size $dynParents`] = "foot="+$pref+$ArmIKLabel;
+			makeDynamicParent($pref+$ElbowIKLabel,$pref+$ElbowIKLabel+"_dynamicParent_group",$dynParents);
+		}// if
+	} // leg
+
+	// Âèçóàëüíûå ëèíèè
+	drawHelpLine({$chainIK[2],$pref+$ArmIKLabel},$pref+$ArmIKLabel,$pref+$ArmIKControlsLabel+".v");
+	drawHelpLine({$chainIK[1],$pref+$ElbowIKLabel},$pref+$ElbowIKLabel,$pref+$ArmIKControlsLabel+".v");
+
+	//--------------------------------------------------------------
+	// Ñîçäàíèå êðèâûõ äëÿ êîíòðîëîâ
+	float $color = 7,$axis=0.0;
+	if ($pref=="r_")	$color = 6;
+	if ($type=="leg") $axis=1.0;
+
+	if (($type=="leg" && $pref=="l_") || ($type=="arm" && $pref=="r_"))
+		createControl("flag",{$pref+$ArmControlLabel,$pref+$ArmControlLabel},{0.8,4.0,-1},"armsLegs");
+	else if (($type=="leg" && $pref=="r_") || ($type=="arm" && $pref=="l_"))
+		createControl("flag",{$pref+$ArmControlLabel,$pref+$ArmControlLabel},{0.8,4.0,1},"armsLegs");
+
+	createControl("circle",{$pref+$ArmFKLabel,$pref+$ArmFKLabel},{1.0,$color,0},"armsLegs"); // ÔÊ
+	createControl("circle",{$pref+$ElbowFKLabel,$pref+$ElbowFKLabel},{1.0,$color,0},"armsLegs");
+	createControl("circle",{$pref+$HandFKLabel,$pref+$HandFKLabel},{1.0,$color,$axis},"armsLegs");
+
+	createControl("circle",{$pref+$ArmIKLabel,$pref+$ArmIKLabel},{1.2,$color,$axis},"armsLegs"); // ÈÊ
+	createControl("sphere",{$pref+$ElbowIKLabel,$pref+$ElbowIKLabel},{0.3,$color,0},"armsLegs");
+
+	//--------------------------------------------------------------
+	// Ñêðûòèå íåíóæíûõ àòðèáóòîâ
+	lockAttrs($pref+$ArmControlsLabel,{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($pref+$ArmJointsLabel,{1,1,1},{1,1,1},{1,1,1},1);
+
+	lockAttrs($chainIK[0],{0,0,0},{0,0,0},{0,0,0},1);
+	lockAttrs($chainFK[0],{0,0,0},{0,0,0},{0,0,0},1);
+	lockAttrs($chainFix[0],{0,0,0},{0,0,0},{0,0,0},1);
+	lockAttrs($chainNoRotate[0],{0,0,0},{0,0,0},{0,0,0},1);
+
+	lockAttrs($pref+$ArmControlLabel,{1,1,1},{1,1,1},{1,1,1},1);
+
+	lockAttrs($pref+$ArmIKControlsLabel,{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($pref+$ArmFKControlsLabel,{1,1,1},{1,1,1},{1,1,1},1);
+
+	lockAttrs($pref+$ArmIKLabel,{0,0,0},{0,0,0},{1,1,1},1);
+	lockAttrs($pref+$ArmIKLabel+"_group",{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($pref+$ArmIKLabel+"_userParent",{0,0,0},{0,0,0},{1,1,1},1);
+	lockAttrs($pref+$ArmIKLabel+"_dynamicParent_group",{1,1,1},{1,1,1},{1,1,1},1);
+
+	lockAttrs($pref+$ElbowIKLabel,{0,0,0},{1,1,1},{1,1,1},1);
+	lockAttrs($pref+$ElbowIKLabel+"_dynamicParent_group",{1,1,1},{1,1,1},{1,1,1},1);
+
+	lockAttrs($pref+$ArmFKLabel,{1,1,1},{0,0,0},{1,1,1},1);
+	lockAttrs($pref+$ElbowFKLabel,{1,1,1},{1,0,1},{1,1,1},1);
+	lockAttrs($pref+$HandFKLabel,{1,1,1},{0,0,0},{1,1,1},1);
+
+	lockAttrs($pref+$ArmFKLabel+"_group",{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($pref+$ElbowFKLabel+"_group",{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($pref+$HandFKLabel+"_group",{1,1,1},{1,1,1},{1,1,1},1);
+
+} // createArmLeg
+//----------------------------------------------------------------------------------------------------------
+proc createFinger(string $pref,  // ïðåôèêñ, ñêàæåì, "l_"
+				   string $type, // indexFinger, middleFinger,ringFinger, pinkyFinger
+				   int $stretch, // èñïîëüçîâàòü ëè ñòðåò÷?
+				   int $stretchRigParams[] // ÷èñëî êîñòåé è óïðàâëÿþùèõ ýëåìåíòîâ íà  stretchRig
+				   ){
+
+	// Íàçâàíèÿ ãðóïï è ò.ä. â âèäå êîíñòàíò
+	string $tuner1Label = $type+"1_tuner"; // òþíåð äëÿ ïåðâîé êîñòè
+	string $tuner2Label = $type+"2_tuner"; // äëÿ âòîðîé
+	string $tuner3Label = $type+"3_tuner"; // äëÿ òðåòüåé
+	string $tuner4Label = $type+"4_tuner"; // è äëÿ ÷åòâåðòîé
+
+	string $ControlsLabel = "fingers_controls"; // íàçâàíèå ãðóïïû ñ ýëåìåíòàìè óïðàâëåíèÿ
+	string $FingerControlsLabel = $type+"_controls"; // íàçâàíèå êîíêðåòíîé ãðóïïû ñ ýëåìåíòàìè óïðàâëåíèÿ. Íàïðèìåð, l_indexFinger_controls
+	string $FingerIKControlsLabel = $type+"IK_controls"; // íàçâàíèå ãðóïïû äëÿ IK ýëåìåíòîâ
+	string $FingerFKControlsLabel = $type+"FK_controls"; // íàçâàíèå ãðóïïû äëÿ FK ýëåìåíòîâ
+
+	string $FingerControlLabel = $type+"_control"; // íàçâàíèå ýëåìåíòà äëÿ ïåðåêëþ÷åíèÿ ðåæèìîâ IK FK
+
+	string $FingerJointsLabel = $type+"_joints"; // êàê áóäåò íàçûâàòüñÿ ãðóïïà ñ êîñòÿìè
+
+	string $FingerLabel = $type; // îáùåå áàçîâîå íàçâàíèå ñèñòåìû. Ñêàæåì,  indexFinger, ringFinger
+
+	string $FingerIKLabel = $type+"IK"; // íàçâàíèå ýëåìåíòà äëÿ IK
+	string $FingerIKOrientationLabel = $type+"IKOrientation"; // ïîëåâåêòîð
+
+	string $FingerFK1Label = $type+"FK1";   // íàçâàíèå ïåðâîãî FK  ýëåìåíòà
+	string $FingerFK2Label = $type+"FK2";  // íàçâàíèå âòîðîãî FK  ýëåìåíòà
+	string $FingerFK3Label = $type+"FK3"; //  íàçâàíèå òðåòüåãî FK  ýëåìåíòà
+
+	string $FingerTransformLabel = $type+"Transform"; // êîíòðîë, óïðàâëÿþùèé ïîëîæåíèåì è îðèåíòàöèåé îáùåé ãðóïïû ïàëüöà
+	//----------------------------------------------------------------------------------------------------------
+	select -cl;
+
+	float $finger1Pos[] = `getAttr ($pref+$tuner1Label+".worldPosition")`;
+	float $finger2Pos[] = `getAttr ($pref+$tuner2Label+".worldPosition")`;
+	float $finger3Pos[] = `getAttr ($pref+$tuner3Label+".worldPosition")`;
+	float $finger4Pos[] = `getAttr ($pref+$tuner4Label+".worldPosition")`;
+
+	vector $finger12 = <<$finger2Pos[0]-$finger1Pos[0], $finger2Pos[1]-$finger1Pos[1], $finger2Pos[2]-$finger1Pos[2]>>;
+	vector $finger23 = <<$finger3Pos[0]-$finger2Pos[0], $finger3Pos[1]-$finger2Pos[1], $finger3Pos[2]-$finger2Pos[2]>>;
+	vector $finger34 = <<$finger4Pos[0]-$finger3Pos[0], $finger4Pos[1]-$finger3Pos[1], $finger4Pos[2]-$finger3Pos[2]>>;
+
+	float $finger12Mag = `mag $finger12`;
+	float $finger23Mag = `mag $finger23`;
+	float $finger34Mag = `mag $finger34`;
+
+	string $fingerJoints[] = {};
+
+	float $coeff = 1;
+	float $orient[] = {0,0,0};
+
+	if ($pref=="r_"){
+		$coeff=1;
+		$orient = {0,0,0};
+	}// r_
+
+	$fingerJoints[0] = `joint -p 0 0 0 `;
+	$fingerJoints[1] = `joint -p ($coeff*$finger12Mag) 0 0`;
+	$fingerJoints[2] = `joint -p ($coeff*$finger12Mag+$coeff*$finger23Mag) 0 0`;
+	$fingerJoints[3] = `joint -p ($coeff*$finger12Mag+$coeff*$finger23Mag+$coeff*$finger34Mag) 0 0`;
+
+	setAttr ($fingerJoints[0]+".jointOrient") $orient[0] $orient[1] $orient[2];
+	setAttr ($fingerJoints[1]+".preferredAngleZ") -45;
+
+	string $IK[] = `ikHandle -startJoint $fingerJoints[0] -endEffector $fingerJoints[2] -solver "ikRPsolver"`;
+
+	xform -ws -t $finger1Pos[0] $finger1Pos[1] $finger1Pos[2] $fingerJoints[0];
+	xform -ws -t $finger3Pos[0] $finger3Pos[1] $finger3Pos[2] $IK[0];
+
+	delete `poleVectorConstraint ($pref+$tuner2Label) $IK[0]`;
+	//-------
+	$IK = `ikHandle -startJoint $fingerJoints[2] -endEffector $fingerJoints[3] -solver "ikSCsolver"`;
+
+	xform -ws -t $finger4Pos[0] $finger4Pos[1] $finger4Pos[2] $IK[0];
+
+	delete `orientConstraint $fingerJoints[1] $IK[0]`;
+	//------
+	setAttr ($fingerJoints[2]+".jointOrient") 0 0 0;
+	setAttr ($fingerJoints[3]+".jointOrient") 0 0 0;
+
+	string $chain[] = `duplicate -rc $fingerJoints[0]`;
+	for ($i=0;$i<4;$i++){
+		$chain[$i] = `rename $chain[$i] ($pref+$FingerLabel+($i+1)+"_joint")`;
+
+		delete `orientConstraint $fingerJoints[$i] $chain[$i]`; // âûðîâíÿòü íîâûå êîñòè
+	} // for
+
+	delete `listRelatives -ad -type ikEffector $chain[0]`; // óäàëèòü âñå effector
+
+	delete $fingerJoints[0];
+	//--------------------------------------------------------------
+	group -n ($pref+$FingerControlsLabel) -em -parent $ControlsLabel;
+	group -n ($pref+$FingerIKControlsLabel) -em -p ($pref+$FingerControlsLabel);
+	group -n ($pref+$FingerFKControlsLabel) -em -p ($pref+$FingerControlsLabel);
+
+	// ñîçäàíèå äîïîëíèòåëüíûõ ñèñòåì è ïåðåèìåíîâêà
+
+	string $chainFK[] = `duplicate -rc $chain[0]`;
+	for ($i=0;$i<3;$i++)	$chainFK[$i] = `rename $chainFK[$i] ($pref+$FingerLabel+"FK"+($i+1)+"_joint")`;
+
+	string $chainIK[] = `duplicate -rc $chain[0]`;
+	for ($i=0;$i<3;$i++)	$chainIK[$i] = `rename $chainIK[$i] ($pref+$FingerLabel+"IK"+($i+1)+"_joint")`;
+
+	string $chainNoRotate[] = `duplicate -rc $chain[0]`; // ñèñòåìà äëÿ êîððåêòíîãî âðàùåíèÿ ïåðâîãî ôàëàíãà
+	for ($i=0;$i<3;$i++)	$chainNoRotate[$i] = `rename $chainNoRotate[$i] ($pref+$FingerLabel+"NoRotate"+($i+1)+"_joint")`;
+	//------
+	delete $chainNoRotate[2]; // îñòàâèòü òîëüêî ïëå÷î
+
+	string $parentTo = ""; // ïàðåíò cóñòàâîâ
+	if ($type =="thumbFinger") $parentTo =  $pref+"hand1_joint";
+	else  $parentTo =  $pref+"hand2_joint";
+
+	if (!`objExists $parentTo`) $parentTo = "skeleton";
+	group -n ($pref+$FingerJointsLabel) $chain[0] $chainIK[0] $chainFK[0] $chainNoRotate[0];
+	parent ($pref+$FingerJointsLabel) $parentTo;
+	setPivots($chain[0], $pref+$FingerJointsLabel);
+
+	string $fingerTransformGroup = `group -n ($pref+$FingerTransformLabel+"_group") -em -p ($pref+$FingerControlsLabel)`;
+	string $fingerTransform = `group -n ($pref+$FingerTransformLabel) -em -p $fingerTransformGroup`;
+
+	parentConstraint $parentTo $fingerTransformGroup;
+	delete `pointConstraint ($pref+$FingerJointsLabel) $fingerTransform`;
+	makeIdentity -apply true -t 1 -r 1 -s 1 -n 0 $fingerTransform;
+	pointConstraint $fingerTransform ($pref+$FingerJointsLabel);
+
+	setAttr ($chainIK[0]+".v") false;
+	setAttr ($chainFK[0]+".v") false;
+	setAttr ($chainNoRotate[0]+".v") false;
+	//---------------------------------------------------------------
+	group -n ($pref+$FingerControlLabel) -em -p ($pref+$FingerControlsLabel);
+	parentConstraint $chain[0] ($pref+$FingerControlLabel);
+
+	addAttr -ln "kinematic"  -at double  -min 0 -max 1 -dv 1 -k true ($pref+$FingerControlLabel);
+
+	string $plus = connect_10_01($pref+$FingerControlLabel+".kinematic",{$pref+$FingerIKControlsLabel+".v"},{$pref+$FingerFKControlsLabel+".v"});
+
+	for ($i=0;$i<3;$i++){ // îñíîâíûå êîñòè
+
+		string $oc[] = `orientConstraint $chainIK[$i] $chainFK[$i] $chain[$i]`;
+		setAttr ($oc[0]+".interpType") 0;// no flip
+
+		connectAttr ($plus+".output2Dx") ($oc[0]+"."+$chainIK[$i]+"W0");
+		connectAttr ($plus+".output2Dy") ($oc[0]+"."+$chainFK[$i]+"W1");
+	} // for
+	//---------------------------------------------------------------
+	// Âñïîìîãàòåëüíàÿ ñèñòåìà äëÿ ïðàâèëüíîãî âðàùåíèÿ ïåðâîãî ôàëàíãà
+	$IK = `ikHandle -n ($pref+$FingerLabel+"NoRotate_IKHandle") -startJoint $chainNoRotate[0] -endEffector $chainNoRotate[1] -solver "ikSCsolver"`;
+	pointConstraint $chain[1] $IK[0];
+	parent $IK[0] ($pref+$FingerJointsLabel);
+
+	setAttr ($IK[0]+".v") false;
+
+	lockAttrs($IK[0],{0,0,0},{0,0,0},{1,1,1},1);
+	//--------------------------------------------------------------------
+	// Íàñòðîéêà IK
+	// IK
+	$IK = `ikHandle -n ($pref+$FingerLabel+"IK_IKHandle") -startJoint $chainIK[0] -endEffector $chainIK[2] -solver "ikRPsolver"`;
+	parent $IK[0] ($pref+$FingerJointsLabel);
+
+	setAttr ($IK[0]+".v") false;
+	lockAttrs($IK[0],{0,0,0},{1,1,1},{1,1,1},1);
+	//----------------------------------------------------
+	// Ìàíèïóëÿòîð ðóêîé â ðåæèìå IK
+	group -n ($pref+$FingerIKLabel+"_group") -em -p ($pref+$FingerIKControlsLabel); // ãðóïïà äëÿ äèíàìè÷åñêîãî ïàðåíòà
+
+	group -n ($pref+$FingerIKLabel) -em -p ($pref+$FingerIKLabel+"_group");
+	xform -ws -t $finger4Pos[0] $finger4Pos[1] $finger4Pos[2] ($pref+$FingerIKLabel);
+	makeIdentity -apply true -t 1 -r 1 -s 1 -n 0 ($pref+$FingerIKLabel);
+
+	// Ïîëå âåêòîð ëîêòÿ
+	string $grp = `group -em -n ($pref+$FingerIKOrientationLabel+"_poser") -p $chainFK[1]`; // âñïîìîãàòåëüíûé îáúåêò äëÿ ïîçèöèîíèðîâàíèÿ ïîëåâåêòîðà
+
+	setAttr ($grp+".ty") (($finger12Mag+$finger23Mag+$finger34Mag)/2.0);
+	lockAttrs($grp,{1,1,1},{1,1,1},{1,1,1},1);
+
+	group -n ($pref+$FingerIKOrientationLabel+"_group") -em -p ($pref+$FingerIKControlsLabel); // ãðóïïà äëÿ äèíàìè÷åñêîãî ïàðåíòà
+
+	group -n ($pref+$FingerIKOrientationLabel) -em -p ($pref+$FingerIKOrientationLabel+"_group");
+	delete `pointConstraint ($pref+$FingerIKOrientationLabel+"_poser") ($pref+$FingerIKOrientationLabel)`;
+	makeIdentity -apply true -t 1 -r 1 -s 1 -n 0 ($pref+$FingerIKOrientationLabel);
+
+	poleVectorConstraint ($pref+$FingerIKOrientationLabel) ($pref+$FingerLabel+"IK_IKHandle");
+	//-----------------------
+	group -n ($pref+$FingerIKLabel+"Rotator_group") -em -p ($pref+$FingerIKLabel); // ãðóïïà äëÿ âðàùåíèÿ ïîñëåäíåãî ôàëàíãà
+	xform -ws -t $finger4Pos[0] $finger4Pos[1] $finger4Pos[2] ($pref+$FingerIKLabel+"Rotator_group");
+	makeIdentity -apply true -t 1 -r 1 -s 1 -n 0 ($pref+$FingerIKLabel+"Rotator_group");
+
+	group -n ($pref+$FingerIKLabel+"PoleVectorMatrix") -em -p ($pref+$FingerJointsLabel); // ðåàëüíûé ïîëåâåêòîð äëÿ aimConstraint
+	pointConstraint ($pref+$FingerIKOrientationLabel) ($pref+$FingerIKLabel+"PoleVectorMatrix");
+	lockAttrs($pref+$FingerIKLabel+"PoleVectorMatrix",{1,1,1},{1,1,1},{1,1,1},1);
+
+	string $ac[] = `aimConstraint -aimVector 1 0 0 -upVector 0 1 0 -worldUpType "object" -worldUpObject ($pref+$FingerIKLabel+"PoleVectorMatrix") $chainIK[0] ($pref+$FingerIKLabel+"Rotator_group")`;
+
+	select -cl;
+	string $auxJoints[] = {}; // âñïîìîãàòåëüíàÿ ñèñòåìà äëÿ âðàùåíèÿ ïîñëåäíåãî ôàëàíãà
+	$auxJoints[0] = `joint -p ($coeff*$finger34Mag) 0 0 -n ($pref+$FingerIKLabel+"Aux1_joint")`;
+	$auxJoints[1] = `joint -p 0 0 0 -n ($pref+$FingerIKLabel+"Aux2_joint") $auxJoints[0]`;
+	$auxJoints[2] = `joint -p ($coeff*$finger34Mag) 0 0 -n ($pref+$FingerIKLabel+"Aux3_joint") $auxJoints[1]`;
+
+	//setAttr ($auxJoints[0]+".jointOrient") $orient[0] $orient[1] $orient[2];
+
+	string $auxGroup = `group -n ($pref+$FingerIKLabel+"Aux_group") $auxJoints[0]`;
+	parent $auxGroup ($pref+$FingerIKLabel+"Rotator_group");
+
+	delete `pointConstraint $auxGroup $auxJoints[0]`;
+
+	delete `orientConstraint $chainFK[2] $auxGroup`; // ñîðèåíòèðîâàòü óïðàâëÿþùèå êîñòè
+	delete `pointConstraint $chainFK[3] $auxGroup`;
+
+	pointConstraint  $auxJoints[1]  ($pref+$FingerLabel+"IK_IKHandle");
+	//-----------
+	group -n ($pref+$FingerIKLabel+"Rotator") -em -p $auxGroup; // âñïîìîãàòåëüíûé îáúåêò,âðàùàþùèé IK Handle
+	xform -ws -t $finger4Pos[0] $finger4Pos[1] $finger4Pos[2] ($pref+$FingerIKLabel+"Rotator");
+	makeIdentity -apply true -t 1 -r 1 -s 1 -n 0 ($pref+$FingerIKLabel+"Rotator");
+
+	orientConstraint -skip x -skip y ($pref+$FingerIKLabel+"Rotator") $auxJoints[0];
+
+	setAttr ($auxJoints[0]+".v") false;
+	lockAttrs($auxGroup,{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($auxJoints[0],{0,0,0},{0,0,0},{0,0,0},1);
+	lockAttrs($pref+$FingerIKLabel+"Rotator_group",{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($pref+$FingerIKLabel+"Rotator",{1,1,1},{1,1,0},{1,1,1},1);
+	//--------------------
+	group -n ($chainIK[1]+"_NoScaleMatrix") -em -p ($pref+$FingerJointsLabel); // äàííàÿ ãðóïïà íóæíà äëÿ ïðàâèëüíîé îðèåíòàöèè ñêàëèðóåìîãî îáúåêòà
+	parentConstraint $chainIK[1] ($chainIK[1]+"_NoScaleMatrix");
+	lockAttrs($chainIK[1]+"_NoScaleMatrix",{1,1,1},{1,1,1},{1,1,1},1);
+
+	string $oc[] = `orientConstraint  $auxJoints[0] $chainIK[2]`;
+	connectAttr -f  ($chainIK[1]+"_NoScaleMatrix.inverseMatrix") ($oc[0]+".constraintParentInverseMatrix");
+	setAttr ($chainIK[1]+"_NoScaleMatrix.inheritsTransform")  false;
+
+	//--------------------
+	// FK
+	group -n ($pref+$FingerFK1Label+"_group") -em -p ($pref+$FingerFKControlsLabel);
+	group -n ($pref+$FingerFK1Label) -em -p ($pref+$FingerFK1Label+"_group");
+	group -n ($pref+$FingerFK2Label+"_group") -em -p ($pref+$FingerFK1Label);
+	group -n ($pref+$FingerFK2Label) -em -p ($pref+$FingerFK2Label+"_group");
+	group -n ($pref+$FingerFK3Label+"_group") -em -p ($pref+$FingerFK2Label);
+	group -n ($pref+$FingerFK3Label) -em -p ($pref+$FingerFK3Label+"_group");
+	//-----------------------------------
+	delete `orientConstraint $chainFK[0] ($pref+$FingerFK1Label+"_group")`;
+	delete `orientConstraint $chainFK[1] ($pref+$FingerFK2Label+"_group")`;
+	delete `orientConstraint $chainFK[2] ($pref+$FingerFK3Label+"_group")`;
+
+	if (`objExists $parentTo`) orientConstraint -mo $parentTo ($pref+$FingerFK1Label+"_group");
+
+	pointConstraint $chainFK[0] ($pref+$FingerFK1Label+"_group");
+	pointConstraint $chainFK[1] ($pref+$FingerFK2Label+"_group");
+	pointConstraint $chainFK[2] ($pref+$FingerFK3Label+"_group");
+
+	orientConstraint  ($pref+$FingerFK1Label) $chainFK[0];
+
+	string $bw = `createNode blendWeighted -n ($pref+$FingerFK2Label+"_blendWeighted")`; // îðèåíò äåëàåì ïðÿìûì ïîäêëþ÷åíèåì, èíà÷å ïðè ñêàëèðîâàíèè ïîÿâëÿþòñÿ áàãè
+	setAttr ($bw+".i[0]") `getAttr ($chainFK[1]+".rz")`;
+	connectAttr ($pref+$FingerFK2Label+".rz") ($bw+".i[1]");
+	connectAttr ($bw+".output") ($chainFK[1]+".rz");
+
+	$bw = `createNode blendWeighted -n ($pref+$FingerFK3Label+"_blendWeighted")`;
+	setAttr ($bw+".i[0]") `getAttr ($chainFK[2]+".rz")`;
+	connectAttr ($pref+$FingerFK3Label+".rz") ($bw+".i[1]");
+	connectAttr ($bw+".output") ($chainFK[2]+".rz");
+
+	// Stretching
+	if ($stretch){
+
+		// Length Factors
+		addAttr -ln "scaleFactor1X"  -at double -min 0.01 -dv 1 -k true ($pref+$FingerControlLabel);
+		addAttr -ln "scaleFactor1Y"  -at double -min 0.01 -dv 1 -k true ($pref+$FingerControlLabel);
+
+		addAttr -ln "scaleFactor2X"  -at double -min 0.01 -dv 1 -k true ($pref+$FingerControlLabel);
+		addAttr -ln "scaleFactor2Y"  -at double -min 0.01 -dv 1 -k true ($pref+$FingerControlLabel);
+
+		addAttr -ln "scaleFactor3Y"  -at double -min 0.01 -dv 1 -k true ($pref+$FingerControlLabel);
+
+		// Stretch FK è IK íà îñíîâíóþ ñèñòåìó
+		for ($i=0;$i<3;$i++){
+			string $b2 = `createNode blendTwoAttr -n ($chain[$i]+"_sx_blendTwoAttr")`;
+			connectAttr  ($chainIK[$i]+".sx") ($b2+".i[0]");
+			connectAttr  ($chainFK[$i]+".sx") ($b2+".i[1]");
+
+			connectAttr ($b2+".output") ($chain[$i]+".sx");
+			connectAttr  ($pref+$FingerControlLabel+".kinematic") ($b2+".attributesBlender");
+
+			$b2 = `createNode blendTwoAttr -n ($chain[$i]+"_sy_blendTwoAttr")`;
+			connectAttr  ($chainIK[$i]+".sy") ($b2+".i[0]");
+			connectAttr  ($chainFK[$i]+".sy") ($b2+".i[1]");
+
+			connectAttr ($b2+".output") ($chain[$i]+".sy");
+			connectAttr ($b2+".output") ($chain[$i]+".sz");
+			connectAttr  ($pref+$FingerControlLabel+".kinematic") ($b2+".attributesBlender");
+		} // for
+
+		// IK stretch
+
+		addAttr -ln "stretch"  -at double -min 0 -max 1 -dv 0 -k true ($pref+$FingerIKLabel);
+		addAttr -ln "minSquash"  -at double  -min 0.1 -max 1 -dv 1 -k true ($pref+$FingerIKLabel);
+		addAttr -ln "saveVolume"  -at double  -min 0 -max 1 -dv 1 -k true ($pref+$FingerIKLabel);
+
+		string $dist[] = createDistance($pref+$FingerIKLabel+"_distance",$chainIK[0],$auxJoints[1]);
+
+		string $mult1_1 = `createNode multDoubleLinear -n ($chainIK[0]+"_scaleScaleFactor1X_multDoubleLinear")`;
+		connectAttr ("main.scaleFactor") ($mult1_1+".input1");
+		connectAttr ($pref+$FingerControlLabel+".scaleFactor1X") ($mult1_1+".input2");
+
+		string $mult1_2 = `createNode multDoubleLinear -n ($chainIK[1]+"_scaleScaleFactor2X_multDoubleLinear")`;
+		connectAttr ("main.scaleFactor") ($mult1_2+".input1");
+		connectAttr ($pref+$FingerControlLabel+".scaleFactor2X") ($mult1_2+".input2");
+		//--------
+		string $mult2_1 = `createNode multDoubleLinear -n ($chainIK[0]+"_scaleDistance_multDoubleLinear")`;
+		setAttr ($mult2_1+".input1") $finger12Mag;
+		connectAttr ($mult1_1+".output") ($mult2_1+".input2");
+
+		string $mult2_2 = `createNode multDoubleLinear -n ($chainIK[1]+"_scaleDistance_multDoubleLinear")`;
+		setAttr ($mult2_2+".input1") $finger23Mag;
+		connectAttr ($mult1_2+".output") ($mult2_2+".input2");
+		//--------
+		string $bw = `createNode blendWeighted -n ($pref+$FingerIKLabel+"_sumScaleDistances_blendWeighted")`;
+		connectAttr ($mult2_1+".output") ($bw+".i[0]");
+		connectAttr ($mult2_2+".output") ($bw+".i[1]");
+
+		string $resIK[] =
+		stretchNodes(1,2,true, $pref+$FingerIKLabel,"_joint",
+								  $pref+$FingerIKLabel+".stretch",
+								  $pref+$FingerIKLabel+".minSquash",
+								  $pref+$FingerIKLabel+".saveVolume",
+								  $pref+$FingerIKLabel+"_distance.distance",
+								  $bw+".output");
+
+		string $multIK1x = `createNode multDoubleLinear -n ($chainIK[0]+"_sx_multDoubleLinear")`;
+		connectAttr ($pref+$FingerControlLabel+".scaleFactor1X") ($multIK1x+".input1");
+		connectAttr ($resIK[2]+".output") ($multIK1x+".input2");
+
+		string $multIK2x = `createNode multDoubleLinear -n ($chainIK[1]+"_sx_multDoubleLinear")`;
+		connectAttr ($pref+$FingerControlLabel+".scaleFactor2X") ($multIK2x+".input1");
+		connectAttr ($resIK[2]+".output") ($multIK2x+".input2");
+		//-----------
+		string $multIK1y = `createNode multDoubleLinear -n ($chainIK[0]+"_sy_multDoubleLinear")`;
+		connectAttr ($pref+$FingerControlLabel+".scaleFactor1Y") ($multIK1y+".input1");
+		connectAttr ($resIK[3]+".output") ($multIK1y+".input2");
+
+		string $multIK2y = `createNode multDoubleLinear -n ($chainIK[1]+"_sy_multDoubleLinear")`;
+		connectAttr ($pref+$FingerControlLabel+".scaleFactor2Y") ($multIK2y+".input1");
+		connectAttr ($resIK[3]+".output") ($multIK2y+".input2");
+
+		connectAttr -f ($multIK1x+".output") ($chainIK[0]+".sx");
+		connectAttr -f ($multIK1y+".output") ($chainIK[0]+".sy");
+		connectAttr -f ($multIK1y+".output") ($chainIK[0]+".sz");
+
+		connectAttr -f ($multIK2x+".output") ($chainIK[1]+".sx");
+		connectAttr -f ($multIK2y+".output") ($chainIK[1]+".sy");
+		connectAttr -f ($multIK2y+".output") ($chainIK[1]+".sz");
+
+		connectAttr ($pref+$FingerControlLabel+".scaleFactor3Y") ($chainIK[2]+".sy");
+		connectAttr ($pref+$FingerControlLabel+".scaleFactor3Y") ($chainIK[2]+".sz");
+
+		// FK stretch
+		connectAttr ($pref+$FingerControlLabel+".scaleFactor1X") ($chainFK[0]+".sx");
+		connectAttr ($pref+$FingerControlLabel+".scaleFactor1Y") ($chainFK[0]+".sy");
+		connectAttr ($pref+$FingerControlLabel+".scaleFactor1Y") ($chainFK[0]+".sz");
+
+		connectAttr ($pref+$FingerControlLabel+".scaleFactor2X") ($chainFK[1]+".sx");
+		connectAttr ($pref+$FingerControlLabel+".scaleFactor2Y") ($chainFK[1]+".sy");
+		connectAttr ($pref+$FingerControlLabel+".scaleFactor2Y") ($chainFK[1]+".sz");
+
+		connectAttr ($pref+$FingerControlLabel+".scaleFactor3Y") ($chainFK[2]+".sy");
+		connectAttr ($pref+$FingerControlLabel+".scaleFactor3Y") ($chainFK[2]+".sz");
+
+	}// stretch
+
+	// Stretch Rigs
+
+	if (`size $stretchRigParams`==2){
+		createStretchRig({$stretchRigParams[0],$stretchRigParams[1]},$pref+$FingerLabel+"1_stretchRig", {$chain[0],$chain[1]},{$chainNoRotate[0],$chain[0]},{$chain[0]},$pref+$FingerJointsLabel);
+		createStretchRig({$stretchRigParams[0],$stretchRigParams[1]},$pref+$FingerLabel+"2_stretchRig", {$chain[1],$chain[2]},{$chain[1],$chain[2]},{$pref+$FingerLabel+"1_stretchRig_control"+$stretchRigParams[1]},$pref+$FingerJointsLabel);
+		createStretchRig({$stretchRigParams[0],$stretchRigParams[1]},$pref+$FingerLabel+"3_stretchRig", {$chain[2],$chain[3]},{$chain[2],$chain[3]},{$pref+$FingerLabel+"2_stretchRig_control"+$stretchRigParams[1]},$pref+$FingerJointsLabel);
+
+		setAttr ($chain[0]+".v") false; // ñêðûòü îñíîâíûå ñóñòàâû, åñëè çàäàí ñòðåò÷Ðèã
+	}// $stretchRig
+	else addToSet("bindJointsSet",{$chain[0],$chain[1],$chain[2]}); // äîáàâèòü áàçîâûå êîñòè â ñåò,åñëè ñòðåò÷ ðèã íå çàäàí
+
+	// Äîïîëíèòåëüíûå ýëåìåíòû äëÿ áåçøâîâîãî ïåðåêëþ÷åíèÿ IK FK
+	group -n ($pref+$FingerFK1Label+"_ikRotate") -em -p ($pref+$FingerFK1Label+"_group"); // ýòà ãðóïïà íóæíà äëÿ ïåðåíîñà âðàùåíèÿ ñ ÈÊ-êîñòè íà 1-ûé ÔÊ-ýëåìåíò
+	orientConstraint $chainIK[0] ($pref+$FingerFK1Label+"_ikRotate");
+	lockAttrs($pref+$FingerFK1Label+"_ikRotate",{1,1,1},{1,1,1},{1,1,1},1);
+	connectAttr ($pref+$FingerFK1Label+".rotateOrder") ($pref+$FingerFK1Label+"_ikRotate.rotateOrder"); // ñâÿçàòü ïîðÿäîê îñåé âðàùåíèÿ
+
+	group -n ($pref+$FingerFK3Label+"_ikRotate") -em -p ($pref+$FingerFK3Label+"_group"); // ïåðåíîñà âðàùåíèÿ ñ ÈÊ-êîñòè íà 3-ûé ÔÊ-ýëåìåíò
+	orientConstraint -skip x -skip y $chainIK[2] ($pref+$FingerFK3Label+"_ikRotate");
+	connectAttr ($pref+$FingerFK3Label+".rotateOrder") ($pref+$FingerFK3Label+"_ikRotate.rotateOrder"); // ñâÿçàòü ïîðÿäîê îñåé âðàùåíèÿ
+
+	lockAttrs($pref+$FingerFK3Label+"_ikRotate",{1,1,1},{1,1,1},{1,1,1},1);
+	//----------
+	group -n ($pref+$FingerIKLabel+"_dynamicParentPoser") -em -p ($pref+$FingerIKLabel+"_group"); // âñïîìîãàòåëüíûé îáúåêò äëÿ áåçøâîâîãî äèíàìè÷åñêîãî ïàðåíòà
+	xform -ws -t $finger4Pos[0] $finger4Pos[1] $finger4Pos[2]  ($pref+$FingerIKLabel+"_dynamicParentPoser");
+	makeIdentity -apply true -t 1 -r 1 -s 1 -n 0 ($pref+$FingerIKLabel+"_dynamicParentPoser");
+
+	connectAttr ($pref+$FingerIKLabel+".rotateOrder") ($pref+$FingerIKLabel+"_dynamicParentPoser.rotateOrder"); // ñâÿçàòü ïîðÿäîê îñåé âðàùåíèÿ
+
+	group -n ($pref+$FingerIKLabel+"_fkTranslate") -em -p ($pref+$FingerIKLabel+"_group"); // ïîçèöèîíèðîâàíèå ÈÊ-êîíòðîëëåðà ïðè ïåðåêëþ÷åíèè
+	xform -ws -t $finger4Pos[0] $finger4Pos[1] $finger4Pos[2] ($pref+$FingerIKLabel+"_fkTranslate");
+	makeIdentity -apply true -t 1 -r 1 -s 1 -n 0 ($pref+$FingerIKLabel+"_fkTranslate");
+
+	pointConstraint $chainFK[3] ($pref+$FingerIKLabel+"_fkTranslate");
+	//--------
+	group -n ($pref+$FingerIKLabel+"_fkRotate") -em -p ($pref+$FingerIKLabel+"Aux_group"); // âðàùåíèå êîñòè ÈÊ
+	xform -ws -t $finger4Pos[0] $finger4Pos[1] $finger4Pos[2] ($pref+$FingerIKLabel+"_fkRotate");
+	makeIdentity -apply true -t 1 -r 1 -s 1 -n 0 ($pref+$FingerIKLabel+"_fkRotate");
+
+	connectAttr ($pref+$FingerIKLabel+".rotateOrder") ($pref+$FingerIKLabel+"_fkRotate.rotateOrder"); // ñâÿçàòü ïîðÿäîê îñåé âðàùåíèÿ
+
+	orientConstraint -skip x -skip y $chainFK[2] ($pref+$FingerIKLabel+"_fkRotate");
+
+	lockAttrs($pref+$FingerIKLabel+"_fkTranslate",{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($pref+$FingerIKLabel+"_fkRotate",{1,1,1},{1,1,1},{1,1,1},1);
+	//---
+	group -n ($pref+$FingerIKOrientationLabel+"_dynamicParentPoser") -em -p ($pref+$FingerIKOrientationLabel+"_group"); // âñïîìîãàòåëüíûé îáúåêò äëÿ áåçøâîâîãî äèíàìè÷åñêîãî ïàðåíòà
+	delete `pointConstraint ($pref+$FingerIKOrientationLabel+"_poser") ($pref+$FingerIKOrientationLabel+"_dynamicParentPoser")`;
+	makeIdentity -apply true -t 1 -r 1 -s 1 -n 0 ($pref+$FingerIKOrientationLabel+"_dynamicParentPoser");
+
+	group -n ($pref+$FingerIKOrientationLabel+"_fkTranslate") -em -p ($pref+$FingerIKOrientationLabel+"_group"); // ïîçèöèîíèðîâàíèå ïîëåâåêòîðà ïðè ïåðåêëþ÷åíèè
+	delete `pointConstraint ($pref+$FingerIKOrientationLabel+"_poser") ($pref+$FingerIKOrientationLabel+"_fkTranslate")`;
+	makeIdentity -apply true -t 1 -r 1 -s 1 -n 0 ($pref+$FingerIKOrientationLabel+"_fkTranslate");
+
+	pointConstraint ($pref+$FingerIKOrientationLabel+"_poser") ($pref+$FingerIKOrientationLabel+"_fkTranslate");
+	lockAttrs($pref+$FingerIKOrientationLabel+"_fkTranslate",{1,1,1},{1,1,1},{1,1,1},1);
+
+	// Áåçøâîâîå ïåðåêëþ÷åíèå ñèñòåì
+	addAttr -ln ($pref+$type+"_ik2fk_script")  -dt "string"  "preferences";
+	addAttr -ln ($pref+$type+"_fk2ik_script")  -dt "string"  "preferences";
+
+	string $ik2fk_script = "{setAttr NAMESPACE"+$pref+$FingerIKLabel+".minSquash 1;float $pos[] = `getAttr NAMESPACE"+$pref+$FingerIKLabel+"_fkTranslate.t`;setAttr NAMESPACE"+$pref+$FingerIKLabel+".t $pos[0] $pos[1] $pos[2];$pos = `getAttr NAMESPACE"+$pref+$FingerIKOrientationLabel+"_fkTranslate.t`;setAttr NAMESPACE"+$pref+$FingerIKOrientationLabel+".t $pos[0] $pos[1] $pos[2];float $rz = `getAttr NAMESPACE"+$pref+$FingerIKLabel+"_fkRotate.rz`;setAttr NAMESPACE"+$pref+$FingerIKLabel+"Rotator.rz $rz;}";
+
+	setAttr ("preferences."+$pref+$type+"_ik2fk_script") -type "string" $ik2fk_script;
+	setAttr -l true ("preferences."+$pref+$type+"_ik2fk_script");
+
+	string $setScaleFactors_script = "{float $s1[] = `getAttr NAMESPACE"+$chainIK[0]+".s`;float $s2[] = `getAttr NAMESPACE"+$chainIK[1]+".s`;float $s3[] = `getAttr NAMESPACE"+$chainIK[2]+".s`;setAttr NAMESPACE"+$pref+$FingerControlLabel+".scaleFactor1X $s1[0];setAttr NAMESPACE"+$pref+$FingerControlLabel+".scaleFactor1Y $s1[1];setAttr NAMESPACE"+$pref+$FingerControlLabel+".scaleFactor2X $s2[0];setAttr NAMESPACE"+$pref+$FingerControlLabel+".scaleFactor2Y $s2[1];setAttr NAMESPACE"+$pref+$FingerControlLabel+".scaleFactor3Y $s3[1];}";
+
+	string $fk2ik_script = "{float $rot[] = `getAttr NAMESPACE"+$pref+$FingerFK1Label+"_ikRotate.r`;setAttr NAMESPACE"+$pref+$FingerFK1Label+".r $rot[0] $rot[1] $rot[2];float $rotZ = `getAttr NAMESPACE"+$pref+$FingerIKLabel+"2_joint.rz`;float $rotZTmp = `getAttr NAMESPACE"+$pref+$FingerFK2Label+"_group.rz`;setAttr NAMESPACE"+$pref+$FingerFK2Label+".rz ($rotZ-$rotZTmp);$rotZ = `getAttr NAMESPACE"+$pref+$FingerFK3Label+"_ikRotate.rz`;setAttr NAMESPACE"+$pref+$FingerFK3Label+".rz $rotZ;}";
+	$fk2ik_script += $setScaleFactors_script;
+
+	setAttr ("preferences."+$pref+$type+"_fk2ik_script") -type "string" $fk2ik_script;
+	setAttr -l true ("preferences."+$pref+$type+"_fk2ik_script");
+	//-------------------------------------------------
+
+	// íàñòðîéêà äèíàìè÷åñêîãî ïàðåíòà
+	string $dynParents[] = {};
+
+	if (`objExists ($pref+"hand1_joint")`) $dynParents[`size $dynParents`] = "hand="+$pref+"hand1_joint";
+	if (`objExists ($pref+"shoulder1_joint")`) $dynParents[`size $dynParents`] = "shoulder="+$pref+"shoulder1_joint";
+	if (`objExists "head_joint"`) $dynParents[`size $dynParents`] = "head=head_joint";
+	if (`objExists "hip_joint"`) $dynParents[`size $dynParents`] = "pelvis=hip_joint";
+	if (`size $dynParents`>0){
+		makeDynamicParent($pref+$FingerIKLabel,$pref+$FingerIKLabel+"_group",$dynParents);
+		makeDynamicParent($pref+$FingerIKOrientationLabel,$pref+$FingerIKOrientationLabel+"_group",$dynParents);
+	} // if `size`
+
+	// Âèçóàëüíûå ëèíèè
+	drawHelpLine({$chainIK[3],$pref+$FingerIKLabel},$pref+$FingerIKLabel,$pref+$FingerIKControlsLabel+".v");
+	drawHelpLine({$chainIK[1],$pref+$FingerIKOrientationLabel},$pref+$FingerIKOrientationLabel,$pref+$FingerIKControlsLabel+".v");
+
+	//--------------------------------------------------------------
+	// Ñîçäàíèå êðèâûõ äëÿ êîíòðîëîâ
+	float $color = 7;
+	if ($pref=="r_")	 $color = 6;
+
+	createControl("flag",{$pref+$FingerControlLabel,$pref+$FingerControlLabel},{0.3,4.0,1},"fingers");
+
+	createControl("cube",{$pref+$FingerTransformLabel,$pref+$FingerTransformLabel},{0.3,$color},"fingers");
+
+	createControl("circle",{$pref+$FingerFK1Label,$pref+$FingerFK1Label},{0.4,$color,0},"fingers"); // ÔÊ
+	createControl("circle",{$pref+$FingerFK2Label,$pref+$FingerFK2Label},{0.4,$color,0},"fingers");
+	createControl("circle",{$pref+$FingerFK3Label,$pref+$FingerFK3Label},{0.4,$color,0},"fingers");
+
+	createControl("sphere",{$pref+$FingerIKLabel,$pref+$FingerIKLabel},{0.2,$color,0},"fingers"); // ÈÊ
+	createControl("sphere",{$pref+$FingerIKOrientationLabel,$pref+$FingerIKOrientationLabel},{0.2,$color,0},"fingers");
+	createControl("circle",{$pref+$FingerIKLabel+"Rotator",$pref+$FingerIKLabel+"Rotator"},{0.4,$color,2},"fingers");
+
+	//--------------------------------------------------------------
+	// Ñêðûòèå íåíóæíûõ àòðèáóòîâ
+	lockAttrs($pref+$FingerControlsLabel,{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($pref+$FingerJointsLabel,{0,0,0},{0,0,0},{1,1,1},1);
+
+	lockAttrs($chainIK[0],{0,0,0},{0,0,0},{0,0,0},1);
+	lockAttrs($chainFK[0],{0,0,0},{0,0,0},{0,0,0},1);
+	lockAttrs($chainNoRotate[0],{0,0,0},{0,0,0},{0,0,0},1);
+
+	lockAttrs($pref+$FingerControlLabel,{1,1,1},{1,1,1},{1,1,1},1);
+
+	lockAttrs($pref+$FingerIKControlsLabel,{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($pref+$FingerFKControlsLabel,{1,1,1},{1,1,1},{1,1,1},1);
+
+	lockAttrs($pref+$FingerIKLabel,{0,0,0},{1,1,1},{1,1,1},1);
+	lockAttrs($pref+$FingerIKLabel+"_group",{1,1,1},{1,1,1},{1,1,1},1);
+
+	lockAttrs($pref+$FingerIKOrientationLabel,{0,0,0},{1,1,1},{1,1,1},1);
+	lockAttrs($pref+$FingerIKOrientationLabel+"_group",{1,1,1},{1,1,1},{1,1,1},1);
+
+	lockAttrs($pref+$FingerTransformLabel+"_group",{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($pref+$FingerTransformLabel,{0,0,0},{1,1,1},{1,1,1},1);
+
+	lockAttrs($pref+$FingerFK1Label,{1,1,1},{0,0,0},{1,1,1},1);
+	lockAttrs($pref+$FingerFK2Label,{1,1,1},{1,1,0},{1,1,1},1);
+	lockAttrs($pref+$FingerFK3Label,{1,1,1},{1,1,0},{1,1,1},1);
+
+	lockAttrs($pref+$FingerFK1Label+"_group",{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($pref+$FingerFK2Label+"_group",{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($pref+$FingerFK3Label+"_group",{1,1,1},{1,1,1},{1,1,1},1);
+}// createFinger
+//----------------------------------------------------------------------------------------------------------
+proc createHand(string $pref, // êàê îáû÷íî, l_ èëè r_
+			          int $fingers[], // ìàññèâ èç 5 ýëåìåíòîâ. {1,1,1,1,1} - ïðèñóòñòâèå ïàëüöåâ
+  			          int $numControls[], // êîë-âî êîíòðîëîâ äëÿ ñòðåò÷ ðèãà íà êàæäûé ôàëàíã
+					  int $stretchable
+			          ){
+
+	string $Hand1TunerLabel = "hand_tuner";
+	string $Hand2TunerLabel = "hand2_tuner";
+
+	string $JointsLabel = "hand_joints";
+	string $PalmLabel = "palm";
+	//------------------------------------------
+	select -cl;
+
+	float $hand1Pos[] = `getAttr ($pref+$Hand1TunerLabel+".worldPosition")`;
+	float $hand2Pos[] = `getAttr ($pref+$Hand2TunerLabel+".worldPosition")`;
+
+	vector $handVec = <<$hand2Pos[0]-$hand1Pos[0], $hand2Pos[1]-$hand1Pos[1], $hand2Pos[2]-$hand1Pos[2]>>;
+
+	float $magHandVec = `mag $handVec`;
+
+	string $handJoints[] = {};
+
+	float $coeff = 1;
+	float $orient[] = {0,0,0};
+
+	if ($pref=="r_") {
+		$coeff = 1;
+		$orient = {0,0,0};
+	}// r_
+
+	$handJoints[0] = `joint -p 0 0 0 `;
+	$handJoints[1] = `joint -p ($coeff*$magHandVec) 0 0`;
+
+	setAttr ($handJoints[0]+".jointOrient") $orient[0] $orient[1] $orient[2];
+
+	string $IK[] = `ikHandle -startJoint $handJoints[0] -endEffector $handJoints[2] -solver "ikSCsolver"`;
+
+	xform -ws -t $hand1Pos[0] $hand1Pos[1] $hand1Pos[2] $handJoints[0]; // ïîçèöèîíèðîâàíèå ðóêè èëè íîãè
+	xform -ws -t $hand2Pos[0] $hand2Pos[1] $hand2Pos[2] $IK[0];
+	delete `orientConstraint -offset $orient[0] $orient[1] $orient[2] ($pref+$Hand2TunerLabel) $IK[0]`;
+
+	string $joints[] = `duplicate -rc $handJoints[0]`;
+	for ($i=0;$i<2;$i++)	{
+		$joints[$i] = `rename $joints[$i] ($pref+"hand"+($i+1)+"_joint")`;
+
+		orientConstraint $handJoints[$i] $joints[$i]; // âûðîâíÿòü íîâûå êîñòè
+	} // for
+
+	delete `listRelatives -ad -type ikEffector $joints[0]`; // óäàëèòü âñå effector
+
+	delete $handJoints[0];
+
+	string $palmGroup = `group -n ($pref+$PalmLabel+"_group") -em -p "other_controls"`;
+	string $palm = `group -n ($pref+$PalmLabel) -em -p $palmGroup`;
+
+	delete `parentConstraint $joints[1] $palmGroup`; // âûðîâíÿòü palm
+	parentConstraint -mo $joints[0] $palmGroup;
+	orientConstraint $palm $joints[1];
+	//--------------------------------------------------------------
+
+	float $color = 7;
+	if ($pref=="r_")	 $color = 6;
+
+	createControl("circle",{$palm,$palm},{0.4,$color,0},"fingers");
+	//--------------------------------------------------------------
+	string $group = `group -n ($pref+$JointsLabel) -p "skeleton" $joints[0]`;
+
+	addToSet("bindJointsSet",{$joints[0],$joints[1]}); // äîáàâèòü â ñåò
+
+	lockAttrs($pref+$JointsLabel,{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($palmGroup,{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($palm,{1,1,1},{0,0,0},{1,1,1},1);
+
+	if ($fingers[0]) createFinger ($pref,"thumbFinger",$stretchable,$numControls); // thumb
+	if ($fingers[1]) createFinger ($pref,"indexFinger",$stretchable,$numControls); // index
+	if ($fingers[2]) createFinger ($pref,"middleFinger",$stretchable,$numControls); // middle
+	if ($fingers[3]) createFinger ($pref,"ringFinger",$stretchable,$numControls); // ring
+	if ($fingers[4]) createFinger ($pref,"pinkyFinger",$stretchable,$numControls); // pinky
+
+} // createHand
+//----------------------------------------------------------------------------------------------------------
+proc createFoot(string $pref){
+
+	string $Foot1TunerLabel = "foot1_tuner";
+	string $Foot2TunerLabel = "foot2_tuner";
+	string $HeelTunerLabel = "heel_tuner";
+	string $ToeTunerLabel = "toe_tuner";
+
+	string $Side1TunerLabel = "foot_side1_tuner";
+	string $Side2TunerLabel = "foot_side2_tuner";
+
+	string $ControlsLabel = "foot_controls";
+	string $JointsLabel = "foot_joints";
+
+	string $FootLabel = "foot";
+	string $ToesLabel = "toes";
+	//---------------------
+	float $foot1Pos[] = `getAttr ($pref+$Foot1TunerLabel+".worldPosition")`; // ïîçèöèè òþíåðîâ
+	float $foot2Pos[] = `getAttr ($pref+$Foot2TunerLabel+".worldPosition")`;
+	float $heelPos[] = `getAttr ($pref+$HeelTunerLabel+".worldPosition")`;
+	float $toePos[] = `getAttr ($pref+$ToeTunerLabel+".worldPosition")`;
+
+	float $side1Pos[] = `getAttr ($pref+$Side1TunerLabel+".worldPosition")`;
+	float $side2Pos[] = `getAttr ($pref+$Side2TunerLabel+".worldPosition")`;
+
+	string $jointsGroup = `group -n ($pref+$JointsLabel) -p "skeleton" -em`;
+	//--------------------------------------------------------------
+	select -cl;
+
+	string $tmpGroup = `group -em`;
+	parentConstraint ($pref+$Foot1TunerLabel) $tmpGroup;
+
+	string $jointsAux[] = {}; // âñïîìîãàòåëüíûå êîñòè
+	$jointsAux [0] = `joint -p $foot1Pos[0] $foot1Pos[1] $foot1Pos[2] -n ($pref+"footAux1_joint") $tmpGroup`;
+	$jointsAux [1] = `joint -p $heelPos[0] $heelPos[1] $heelPos[2] -n ($pref+"footAux2_joint") $jointsAux[0]`;
+	$jointsAux	[2] = `joint -p $foot2Pos[0] $foot2Pos[1] $foot2Pos[2]  -n ($pref+"footAux3_joint") $jointsAux[1]`;
+	$jointsAux	[3] = `joint -p $side2Pos[0] $side2Pos[1] $side2Pos[2] -n ($pref+"footAux4_joint") $jointsAux[2]`;
+	$jointsAux	[4] = `joint -p $side1Pos[0] $side1Pos[1] $side1Pos[2] -n ($pref+"footAux5_joint") $jointsAux[3]`;
+	$jointsAux	[5] = `joint -p $foot2Pos[0] $foot2Pos[1] $foot2Pos[2] -n ($pref+"footAux6_joint") $jointsAux[4]`;
+	$jointsAux	[6] = `joint -p $toePos[0] $toePos[1] $toePos[2] -n ($pref+"footAux7_joint")  $jointsAux[5]`;
+
+	$jointsAux	[7] = `joint -p $foot2Pos[0] $foot2Pos[1] $foot2Pos[2] -n ($pref+"footAux8_joint") $jointsAux[6]`;
+	$jointsAux	[8] = `joint -p $foot1Pos[0] $foot1Pos[1] $foot1Pos[2] -n ($pref+"footAux9_joint")  $jointsAux[7]`;
+
+	$jointsAux	[9] = `joint -p $foot2Pos[0] $foot2Pos[1] $foot2Pos[2] -n ($pref+"footAux10_joint") $jointsAux[6]`;
+	$jointsAux	[10] = `joint -p $toePos[0] $toePos[1] $toePos[2] -n ($pref+"footAux11_joint")  $jointsAux[9]`;
+
+	string $joints[] = {}; // îñíîâíûå ñóñòàâû äëÿ ïðèâÿçêè
+	$joints[0] = `joint -p $foot1Pos[0] $foot1Pos[1] $foot1Pos[2] -n ($pref+"foot1_joint") $tmpGroup `;
+	$joints[1] = `joint -p $foot2Pos[0] $foot2Pos[1] $foot2Pos[2] -n ($pref+"foot2_joint") $joints[0] `;
+	$joints[2] = `joint -p $toePos[0]    $toePos[1]    $toePos[2]    -n ($pref+"foot3_joint") $joints[1] `;
+
+	parent $joints[0] $jointsAux[0] $jointsGroup;
+	delete $tmpGroup;
+
+	string $IK1[] = `ikHandle -n ($pref+"foot1_IKHandle") -startJoint $joints[0] -endEffector $joints[1] -solver "ikSCsolver"`;
+	string $IK2[] = `ikHandle -n ($pref+"foot2_IKHandle") -startJoint $joints[1] -endEffector $joints[2] -solver "ikSCsolver"`;
+
+	parent $IK1[0] $jointsGroup;
+	parent $IK2[0] $jointsGroup;
+
+	setAttr ($IK1[0]+".v") false;
+	setAttr ($IK2[0]+".v") false;
+
+	lockAttrs($IK1[0],{0,0,0},{0,0,0},{1,1,1},1);
+	lockAttrs($IK2[0],{0,0,0},{0,0,0},{1,1,1},1);
+
+	parentConstraint -mo $jointsAux[8] $IK1[0]; // ïÿòêà
+	parentConstraint -mo $jointsAux[10] $IK2[0]; // ïàëüöû
+
+	setAttr ($jointsAux[0]+".v") false;
+	lockAttrs($jointsAux[0],{0,0,0},{0,0,0},{0,0,0},1);
+
+	// Êîíòðîëû äëÿ ñòóïíè
+	string $controlsGroup = `group -n ($pref+$ControlsLabel) -p "controls" -em`;
+	string $footGroup = `group -n ($pref+$FootLabel+"_group") -p $controlsGroup -em`;
+	string $foot = `group -n ($pref+$FootLabel) -p $footGroup -em`;
+
+	addAttr -ln "heelToToes"  -at double  -min 0 -max 1 -dv 0 -k true $foot;
+	addAttr -ln "toesSide"  -at double -dv 0 -k true $foot;
+	addAttr -ln "heelSide"  -at double -dv 0 -k true $foot;
+
+	addAttr -ln "kinematic"  -at double -min 0 -max 1 -dv 0 -k true $foot;
+
+	parentConstraint $joints[0] $footGroup; // ïîçèöèîíèðîâàíèå êîíòðîëëåðà íà ïÿòêó
+	//-----------------------------------------------------------
+
+	//------
+	string $b2a = `createNode blendTwoAttr -n ($foot+"_toesSide_blendTwoAttr")`;
+	connectAttr  ($foot+".toesSide") ($b2a+".i[0]");
+	setAttr ($b2a+".i[1]") 0;
+	connectAttr ($foot+".kinematic") ($b2a+".attributesBlender");
+	connectAttr ($b2a+".output") ($jointsAux[6]+".ry");
+	//------
+
+	//------
+	$b2a = `createNode blendTwoAttr -n ($foot+"_heelSide_blendTwoAttr")`;
+	connectAttr ($foot+".heelSide") ($b2a+".i[0]");
+	setAttr ($b2a+".i[1]") 0;
+	connectAttr ($foot+".kinematic") ($b2a+".attributesBlender");
+	connectAttr ($b2a+".output") ($jointsAux[1]+".ry");
+
+	//--------------------
+	string $clamp = `createNode clamp -n ($foot+"_heel_clamp")`; // íàñòðîéêà îãðàíè÷åíèé íà ñòîïó
+	connectAttr ($foot+".rx") ($clamp+".inputR");
+	connectAttr ($foot+".rx") ($clamp+".inputG");
+	setAttr ($clamp+".maxR") 180;
+	setAttr ($clamp+".minG") -180;
+
+	//------
+	$b2a = `createNode blendTwoAttr -n ($foot+"_heelDown_blendTwoAttr")`;
+	connectAttr ($clamp+".outputG") ($b2a+".i[0]");
+	setAttr ($b2a+".i[1]") 0;
+	connectAttr ($foot+".kinematic") ($b2a+".attributesBlender");
+	connectAttr ($b2a+".output") ($jointsAux[1]+".rx");
+	//------
+
+	//----------
+	string $setRange = `createNode setRange -n ($foot+"_heelToToes_setRange")`;
+	connectAttr ($foot+".heelToToes") ($setRange+".valueX");
+	connectAttr ($foot+".heelToToes") ($setRange+".valueY");
+
+	setAttr ($setRange+".oldMaxX") 1;
+	setAttr ($setRange+".oldMaxY") 1;
+
+	connectAttr ($clamp+".outputR") ($setRange+".minX");
+	connectAttr ($clamp+".outputR") ($setRange+".maxY");
+
+	//------
+	$b2a = `createNode blendTwoAttr -n ($foot+"_heelUp_blendTwoAttr")`;
+	connectAttr ($setRange+".outValueX") ($b2a+".i[0]");
+	setAttr ($b2a+".i[1]") 0;
+	connectAttr ($foot+".kinematic") ($b2a+".attributesBlender");
+	connectAttr ($b2a+".output") ($jointsAux[7]+".rx");
+	//------
+
+	//------
+	$b2a = `createNode blendTwoAttr -n ($foot+"_toesUp_blendTwoAttr")`;
+	connectAttr ($setRange+".outValueY") ($b2a+".i[0]");
+	setAttr ($b2a+".i[1]") 0;
+	connectAttr ($foot+".kinematic") ($b2a+".attributesBlender");
+	connectAttr ($b2a+".output") ($jointsAux[6]+".rx");
+	//------
+
+	//---------------
+	$clamp = `createNode clamp -n ($foot+"_side_clamp")`;
+	connectAttr ($foot+".rz") ($clamp+".inputR");
+	connectAttr ($foot+".rz") ($clamp+".inputG");
+	setAttr ($clamp+".maxR") 180;
+	setAttr ($clamp+".minG") -180;
+
+	//------
+	$b2a = `createNode blendTwoAttr -n ($foot+"_sideR_blendTwoAttr")`;
+	connectAttr ($clamp+".outputR") ($b2a+".i[0]");
+	setAttr ($b2a+".i[1]") 0;
+	connectAttr ($foot+".kinematic") ($b2a+".attributesBlender");
+	connectAttr ($b2a+".output") ($jointsAux[3]+".rz");
+	//------
+
+	//------
+	$b2a = `createNode blendTwoAttr -n ($foot+"_sideG_blendTwoAttr")`;
+	connectAttr ($clamp+".outputG") ($b2a+".i[0]");
+	setAttr ($b2a+".i[1]") 0;
+	connectAttr ($foot+".kinematic") ($b2a+".attributesBlender");
+	connectAttr ($b2a+".output") ($jointsAux[4]+".rz");
+	//------
+
+	//-----------------------------------------------
+	string $toesGroup = `group -n ($pref+$ToesLabel+"_group") -p $controlsGroup -em`;
+	string $toes = `group -n ($pref+$ToesLabel) -p $toesGroup -em`;
+
+	pointConstraint $joints[1] $toesGroup; // ïîçèöèîíèðîâàíèå êîíòðîëëåðà íà ïàëüöû
+	orientConstraint $jointsAux[6] $toesGroup; // è åãî îðèåíòàöèÿ
+
+	orientConstraint -mo $toes $jointsAux[9];
+	//------------------------------------------------
+	addToSet("bindJointsSet",{$joints[0],$joints[1]}); // äîáàâèòü â ñåò
+	// ------------------------------------------
+	// Êðèâûå íà êîíòðîëû
+
+	float $color = 7.0;
+	if ($pref=="r_")	 $color = 6.0;
+
+	createControl("sphere",{$foot,$foot},{0.5,$color},"armsLegs");
+	createControl("circle",{$toes,$toes},{0.7,$color,2},"armsLegs");
+
+	addToSet("bindJointsSet",{$joints[0],$joints[1]}); // äîáàâèòü â ñåò
+	// ëîê àòðèáóòîâ
+	lockAttrs($jointsGroup,{1,1,1},{1,1,1},{1,1,1},1);
+
+	lockAttrs($controlsGroup,{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($footGroup,{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($toesGroup,{1,1,1},{1,1,1},{1,1,1},1);
+
+	lockAttrs($foot,{1,1,1},{0,1,0},{1,1,1},1);
+	lockAttrs($toes,{1,1,1},{0,0,0},{1,1,1},1);
+
+} // createFoot
+//----------------------------------------------------------------------------------------------------------
+proc createBody(int $numJoints[]){
+
+	string $ControlsLabel = "body_controls";
+	string $JointsLabel = "body_joints";
+
+	string $PelvisLabel = "pelvis";
+	string $SpineLabel = "spine";
+	string $HipLabel = "hip";
+	string $ChestLabel = "chest";
+
+	string $bodyLabel = "body";
+	//------------------------------------------------------------------------------------------
+	float $pelvisPos[] = `getAttr pelvis_tuner.worldPosition`; // ïîçèöèè òþíåðîâ
+	float $spinePos[] = `getAttr spine_tuner.worldPosition`;
+	float $chestPos[] = `getAttr chest_tuner.worldPosition`;
+	float $claviclePos[] = `getAttr clavicle_tuner.worldPosition`;
+
+	select -cl;
+
+	string $groupJoints = `group -n $JointsLabel -p "skeleton" -em`; // ãðóïïà ñ êîñòÿìè
+
+	string $joints[] = {}; // êîñòè òåëà FK
+
+	$joints[0] = `joint -p $pelvisPos[0] $pelvisPos[1] $pelvisPos[2] -n ($bodyLabel+"1_joint") $groupJoints `;
+	$joints[1] = `joint -p $spinePos[0] $spinePos[1] $spinePos[2] -n ($bodyLabel+"2_joint") $joints[0] `;
+	$joints[2] = `joint -p $chestPos[0] $chestPos[1] $chestPos[2] -n ($bodyLabel+"3_joint") $joints[1] `;
+	$joints[3] = `joint -p $claviclePos[0] $claviclePos[1] $claviclePos[2] -n ($bodyLabel+"4_joint") $joints[2]`;
+
+	string $clavicleJoint = `joint -p $claviclePos[0] $claviclePos[1] $claviclePos[2] -radius 2 -n ("clavicle_joint") $JointsLabel`;
+	string $hipJoint = `joint -p $pelvisPos[0] $pelvisPos[1] $pelvisPos[2] -radius 2 -n ("hip_joint") $JointsLabel`;
+
+	// îðèåíòû
+	for ($i=0;$i<4;$i++)	joint -e  -zso -oj xyz -sao yup $joints[$i];
+
+	setAttr ($joints[0]+".v") false;
+	lockAttrs($joints[0],{0,0,0},{0,0,0},{0,0,0},1);
+
+	// Êîíòðîëû
+	string $groupControls = `group -n $ControlsLabel -p "controls" -em`;
+
+	// Òàç
+	string $pelvisGroup = `group -n ($PelvisLabel+"_group") -p $groupControls -em`;
+	string $pelvis = `group -n $PelvisLabel -p $pelvisGroup -em`;
+
+	setAttr ($pelvis+".rotateOrder") 3; // xzy
+
+	delete `pointConstraint $joints[0] $pelvisGroup`; // âûðàâíèâàíèå òàçà ïî îñÿì
+	delete `orientConstraint $hipJoint $pelvisGroup`;
+
+	pointConstraint $pelvis $joints[0];
+	orientConstraint -mo $pelvis $joints[0];
+	//----------------
+	// Ñïèíà
+	string $spine = `group -n $SpineLabel -p $pelvis -em`;
+
+	setAttr ($spine+".rotateOrder") 3; // xzy
+
+	delete `pointConstraint $joints[1] $spine`;
+	makeIdentity -apply true -t 1 -r 1 -s 1 -n 0 $spine;
+	pointConstraint $joints[1] $spine;
+
+	orientConstraint -mo $spine $joints[1];
+	//-------
+	string $group1 = `group -n ($ChestLabel+"Rotate1") -p $spine -em`;
+	string $group2 = `group -n ($ChestLabel+"Rotate2") -p $spine -em`;
+	string $group3 = `group -n ($ChestLabel+"Rotate3") -p $spine -em`;
+
+	connectAttr ($spine+".r") ($group2+".r");
+
+	addAttr -ln ($ChestLabel+"RotateFactor")  -at double  -min 0 -max 1 -dv 1 -k true $spine;
+
+	string $oc[] = `orientConstraint $group1 $group2 $group3`;
+	setAttr ($oc[0]+".interpType") 2; // shortness
+
+	connect_10_01($spine+"."+$ChestLabel+"RotateFactor",{$oc[0]+"."+$group1+"W0"},{$oc[0]+"."+$group2+"W1"});
+	//----------------
+	// Áåäðà
+	string $hip = `group -n $HipLabel -p $pelvis -em`;
+
+	delete `pointConstraint $joints[0] $hip`;
+	makeIdentity -apply true -t 1 -r 1 -s 1 -n 0 $hip;
+	//----------------
+	// Ãðóäü
+	string $chestGroup = `group -n ($ChestLabel+"_group") -p $pelvis -em`;
+	string $chest = `group -n $ChestLabel -p $chestGroup -em`;
+
+	setAttr ($chest+".rotateOrder") 3; // xzy
+
+	delete `pointConstraint $joints[2] $chestGroup`;
+	makeIdentity -apply true -t 1 -r 1 -s 1 -n 0 $chestGroup;
+
+	pointConstraint $joints[2] $chestGroup;
+	orientConstraint -mo $chest $joints[2];
+	orientConstraint -mo $group3 $chestGroup; // âðàùåíèå chest îò spine
+	//------------------------------------------------------------------------------------
+	// ÈÊ-ñèñòåìà íà òåëî
+	string $baseName = $bodyLabel+"_stretch";
+
+	vector $pelvisSpineVec = <<$spinePos[0]-$pelvisPos[0],$spinePos[1]-$pelvisPos[1],$spinePos[2]-$pelvisPos[2]>>;
+	vector $spineChestVec = <<$chestPos[0]-$spinePos[0],$chestPos[1]-$spinePos[1],$chestPos[2]-$spinePos[2]>>;
+	vector $chestClavicleVec = <<$claviclePos[0]-$chestPos[0],$claviclePos[1]-$chestPos[1],$claviclePos[2]-$chestPos[2]>>;
+
+	float $pelvisSpineMag = `mag $pelvisSpineVec`; // èñïîëüçóÿ ðàññòîÿíèÿ, ñòðîèì êîñòè íà êàæäûé ñóñòàâ
+	float $spineChestMag = `mag $spineChestVec`;
+	float $chestClavicleMag = `mag $chestClavicleVec`;
+
+	string $pelvisJoints[] = {}; // êîñòè òàçà
+	string $spineJoints[] = {}; // ñïèíû
+	string $chestJoints[] = {}; // ãðóäè
+
+	int $index = 1; // àáñîëþòíûé èíäåêñ êîñòåé
+
+	select -cl;
+	for ($i=0;$i<$numJoints[0];$i++)$pelvisJoints[$i] = `joint -r -p ($pelvisSpineMag/$numJoints[0]) 0 0 -n ($baseName+ ($index++) +"_joint")`;
+	delete `parentConstraint ($bodyLabel+"1_joint") $pelvisJoints[0]`;
+
+	select -cl;
+	for ($i=0;$i<$numJoints[1];$i++)$spineJoints[$i] = `joint -r -p ($spineChestMag/$numJoints[1]) 0 0 -n ($baseName+($index++)+"_joint")`;
+	delete `parentConstraint ($bodyLabel+"2_joint") $spineJoints[0]`;
+
+	select -cl;
+	for ($i=0;$i<=$numJoints[2];$i++)$chestJoints[$i] = `joint -r -p ($chestClavicleMag/$numJoints[2]) 0 0 -n ($baseName+($index++)+"_joint")`;
+	delete `parentConstraint ($bodyLabel+"3_joint") $chestJoints[0]`;
+
+	parent $pelvisJoints[0] $JointsLabel;
+	parent $spineJoints[0] $pelvisJoints[$numJoints[0]-1]; // ñôîðìèðîâàòü îäíó öåïî÷êó
+	parent $chestJoints[0] $spineJoints[$numJoints[1]-1];
+
+	parentConstraint -mo $hip $hipJoint ;
+	parentConstraint -mo $chest $clavicleJoint ;
+
+	//-------------
+	string $IK[] = `ikHandle -n ($baseName+"_IKHandle") -solver ikSplineSolver -snapCurve true -createCurve true -ns 5 -simplifyCurve true -startJoint $pelvisJoints[0] -endEffector $chestJoints[$numJoints[2]]`;
+
+	parent $IK[0] $JointsLabel;
+	$IK[2] = `rename $IK[2] ($baseName+"_curve")`;
+
+	setAttr ($IK[0]+".v") false; // ñïðÿòàòü ÈÊ-õýíäë
+	setAttr ($IK[2]+".v") false; // ñïðÿòàòü êðèâóþ
+
+	lockAttrs($IK[2],{1,1,1},{1,1,1},{1,1,1},1); // êðèâàÿ
+	lockAttrs($IK[0],{0,0,0},{0,0,0},{1,1,1},1);
+
+	// Íàñòðîéêà òâèñòà äëÿ SplineIK
+	string $startTwist = `group -n ($baseName+"_startTwist") -em -p $JointsLabel`; // òâèñòîâûå îáúåêòû äëÿ ÈÊ
+	string $endTwist = `group -n ($baseName+"_endTwist") -em -p $JointsLabel`;
+
+	parentConstraint $spine $startTwist;
+	parentConstraint $chest $endTwist;
+
+	lockAttrs($startTwist,{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($endTwist,{1,1,1},{1,1,1},{1,1,1},1);
+	//--------
+	setAttr ($IK[0]+".dTwistControlEnable") 1; // enable twist control
+	setAttr ($IK[0]+".dWorldUpAxis") 3; // positive Z
+	setAttr ($IK[0]+".dWorldUpType") 4; // object rotation up start/end
+	setAttr ($IK[0]+".dWorldUpVector") 0 0 1;
+	setAttr ($IK[0]+".dWorldUpVectorEnd") 0 0 1;
+
+	connectAttr ($startTwist+".worldMatrix") ($IK[0]+".dWorldUpMatrix");
+	connectAttr ($endTwist+".worldMatrix") ($IK[0]+".dWorldUpMatrixEnd");
+
+	// Äåëàåì ðåøåòî÷êó äëÿ äåôîðìàöèè êðèâîé
+	string $lattice[] = `lattice -divisions 2 4 2 -objectCentered true  -ldv 2 2 2 -ol 1 -exclusive "characterPartition" -n ($baseName+"_lattice") $IK[2]`;
+	setAttr ($lattice[1]+".inheritsTransform") false;
+	parent $lattice[1] $lattice[2] $JointsLabel;
+
+	setAttr ($lattice[1]+".v") false; // çàëî÷èòü è ñïðÿòàòü ðåøåòêó
+	setAttr ($lattice[2]+".v") false;
+
+	lockAttrs($lattice[1],{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($lattice[2],{1,1,1},{1,1,1},{1,1,1},1);
+
+	string $clustersGroup = `group -n ($baseName+"_clusters_group") -em -p $JointsLabel`; // ãðóïïà ñ êëàñòåðàìè
+	setAttr ($clustersGroup+".v") false;
+	lockAttrs($clustersGroup,{1,1,1},{1,1,1},{1,1,1},1);
+
+	string $cluster1[] = `cluster -n ($baseName+"_cluster1") ($lattice[1]+".pt[0:1][0:1][0:1]")`;
+	string $cluster2[] = `cluster -n ($baseName+"_cluster2") ($lattice[1]+".pt[0:1][2:3][0:1]")`;
+
+	parent $cluster1[1] $cluster2[1] $clustersGroup; // ïåðåìåñòèòü êëàñòåðû â îáùóþ ãðóïïó
+
+	setPivots($hip,$cluster1[1]);
+	setPivots($chest,$cluster2[1]);
+
+	parentConstraint -mo $hip $cluster1[1];
+	parentConstraint -mo $chest $cluster2[1];
+
+	lockAttrs($cluster1[1],{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($cluster2[1],{1,1,1},{1,1,1},{1,1,1},1);
+
+	string $startCurveInfo = `createNode curveInfo -n ($baseName+"_start_curveInfo")`;
+	string $endCurveInfo = `createNode curveInfo -n ($baseName+"_end_curveInfo")`;
+
+	connectAttr ($lattice[0]+".input[0].inputGeometry") ($startCurveInfo+".inputCurve");
+	connectAttr  ($lattice[0]+".outputGeometry[0]") ($endCurveInfo+".inputCurve");
+	//------------------------------------------------------------------------------------
+	// Ñòðåò÷
+
+	addAttr -ln "saveVolume"  -at double  -min 0 -max 1 -dv 1 -k true $pelvis;
+
+	stretchNodes(1,$numJoints[0]+$numJoints[1]+$numJoints[2], true, $baseName,"_joint","","0.1", $pelvis+".saveVolume", $endCurveInfo+".arcLength",$startCurveInfo+".arcLength");
+	//------------------------------------------------------------------------------------
+	for ($i=1;$i<=$numJoints[0]+$numJoints[1]+$numJoints[2];$i++)
+		addToSet("bindJointsSet",{$baseName+$i+"_joint"}); // äîáàâèòü â ñåò
+
+	addToSet("bindJointsSet",{$hipJoint,$clavicleJoint});
+	//------------------------------------------------------------------------------------
+	createControl("circle",{$pelvis,$pelvis},{3.0,8,1},"body");
+	createControl("circle",{$hip,$hip},{2.0,8,1},"body");
+	createControl("circle",{$spine,$spine},{2.0,8,1},"body");
+	createControl("circle",{$chest,$chest},{2.0,8,1},"body");
+
+	//------------------------------------------------------------------------------------
+	// ëîê àòðèáóòîâ
+
+	lockAttrs($group1,{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($group2,{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($group3,{1,1,1},{1,1,1},{1,1,1},1);
+
+	lockAttrs($groupJoints,{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($groupControls,{1,1,1},{1,1,1},{1,1,1},1);
+
+	lockAttrs($pelvisGroup,{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($pelvis,{0,0,0},{0,0,0},{1,1,1},1);
+	lockAttrs($spine,{1,1,1},{0,0,0},{1,1,1},1);
+	lockAttrs($hip,{0,0,0},{0,0,0},{1,1,1},1);
+
+	lockAttrs($chestGroup,{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($chest,{0,0,0},{0,0,0},{1,1,1},1);
+
+}// createBody
+//----------------------------------------------------------------------------------------------------------
+proc createHead(int $neckStretchRigParams[], // íàñòðîéêè ñòðåò÷ ðèãà íà øåþ
+			int $headStretchRigParams[]// íàñòðîéêè ñòðåò÷ ðèãà íà ãîëîâó
+			){
+
+	string $HeadLabel = "head";
+	string $HeadStretchLabel = "headStretch";
+
+	string $NeckLabel = "neck";
+	string $ControlsLabel = "head_controls";
+
+	string $AdditionalJoints[] = {"clavicle_joint"};
+	//----------------------------------------------
+	float $neckPos[] = `getAttr neck_tuner.worldPosition`; // ïîçèöèè òþíåðîâ
+	float $headPos[] = `getAttr head_tuner.worldPosition`;
+	float $headEndPos[] = `getAttr head_end_tuner.worldPosition`;
+
+	select -cl;
+
+	string $joints[] = {}; // îñíîâíûå êîñòè ãîëîâû
+
+	if (!`objExists $AdditionalJoints[0]`){warning ("createHead: cannot create head. Cannot find '"+$AdditionalJoints[0]+"'"); return;}
+
+	$joints[0] = `joint -p $neckPos[0] $neckPos[1] $neckPos[2] -n ("neck_joint") $AdditionalJoints[0]`;  // ãîëîâà íà÷èíàåòñÿ îò êëþ÷èöû
+	$joints[1] = `joint -p $headPos[0] $headPos[1] $headPos[2] -n ("head_joint") $joints[0] `;
+	$joints[2] = `joint -p $headEndPos[0] $headEndPos[1] $headEndPos[2] -n ("head_end_joint") $joints[1] `;
+
+	// îðèåíòû
+	for ($i=0;$i<3;$i++)	joint -e  -zso -oj xyz -sao yup $joints[$i];
+
+	//-------------------------------------------------------------------------
+	group -n $ControlsLabel -em -p "controls";
+	// Øåÿ
+	string $neckGroup = `group -n ($NeckLabel+"_group") -em -p $ControlsLabel`;
+	group -n $NeckLabel -em -p $neckGroup;
+
+	setAttr ($NeckLabel+".rotateOrder") 3; // xzy
+
+	pointConstraint $joints[0] $neckGroup;
+	orientConstraint $AdditionalJoints[0] $neckGroup;
+
+	orientConstraint -mo $NeckLabel $joints[0];
+	//---
+	// Ãîëîâà
+	string $headDynGroup = `group -n ($HeadLabel+"_dynamicParent_group") -em -p $ControlsLabel`;
+	string $headGroup = `group -n ($HeadLabel+"_group") -em -p $headDynGroup`;
+	group -n ($HeadLabel+"_dynamicParentPoser") -em -p $headGroup;
+	group -n $HeadLabel -em -p $headGroup;
+
+	setAttr ($HeadLabel+".rotateOrder") 3; // xzy
+	connectAttr ($HeadLabel+".rotateOrder") ($HeadLabel+"_dynamicParentPoser.rotateOrder");
+
+	string $pcHeadGroup[] = `pointConstraint $joints[1] $headGroup`;
+	disconnectAttr ($pcHeadGroup[0]+".constraintTranslateX") ($headGroup+".tx");
+	disconnectAttr ($pcHeadGroup[0]+".constraintTranslateY") ($headGroup+".ty");
+	disconnectAttr ($pcHeadGroup[0]+".constraintTranslateZ") ($headGroup+".tz");
+
+	string $plus = `createNode plusMinusAverage -n ($headGroup+"_ty_plusMinusAverage")`;
+	setAttr ($plus+".operation") 2; // substract
+	connectAttr ($pcHeadGroup[0]+".constraintTranslate") ($plus+".input3D[0]");
+	connectAttr ($HeadLabel+".t") ($plus+".input3D[1]");
+
+	connectAttr ($plus+".output3D") ($headGroup+".t");
+
+	//---------------
+	delete `orientConstraint $AdditionalJoints[0] $headGroup`; // âûðàâíèâàíèå øåè è ãîëîâû ïî îñÿì chest
+
+	group -n ($joints[0]+"_NoScaleMatrix") -em -p $AdditionalJoints[0]; // äàííàÿ ãðóïïà íóæíà äëÿ ïðàâèëüíîé îðèåíòàöèè ñêàëèðóåìîãî îáúåêòà
+	setAttr ($joints[0]+"_NoScaleMatrix.inheritsTransform")  false;
+
+	parentConstraint $joints[0] ($joints[0]+"_NoScaleMatrix");
+	lockAttrs($joints[0]+"_NoScaleMatrix",{1,1,1},{1,1,1},{1,1,1},1);
+
+	string $oc[] = `orientConstraint -mo $HeadLabel $joints[1]`;
+	connectAttr -f ($joints[0]+"_NoScaleMatrix.inverseMatrix") ($oc[0]+".constraintParentInverseMatrix"); // íå ó÷èòûâàòü ñêåéë
+
+	// Stretch Rig
+	if (`size $neckStretchRigParams`==2){
+
+		string $constrains[] = {$joints[0]};
+
+		if (`size $headStretchRigParams`!=2){ // åñëè íåò ñòðåò÷ ðèãà íà  ãîëîâó
+			for ($i=1;$i<$neckStretchRigParams[1]-1;$i++) $constrains[$i] = "";
+			$constrains[`size $constrains`] = $joints[1];
+		} // åñëè åñòü ãîëîâà
+
+		createStretchRig({$neckStretchRigParams[0],$neckStretchRigParams[1]},$NeckLabel+"_stretchRig", {$joints[0],$joints[1]},{$joints[0],$joints[1]},$constrains,$AdditionalJoints[0]);
+	} // $neck
+	else 	addToSet("bindJointsSet",{$joints[0]}); // äîáàâèòü â ñåò øåþ
+
+	if (`size $headStretchRigParams`==2){  // ñòðåò÷ ðèã íà ãîëîâó
+		string $constrain[] = {""};
+		if (`size $neckStretchRigParams`==2) $constrain = {$NeckLabel+"_stretchRig_control"+$neckStretchRigParams[1]};
+		else $constrain = {$joints[1]};
+
+		createStretchRig({$headStretchRigParams[0],$headStretchRigParams[1]},$HeadLabel+"_stretchRig", {$joints[1],$joints[2]},{$joints[1],$joints[2]},$constrain,$AdditionalJoints[0]);
+	} // $head
+	else 	addToSet("bindJointsSet",{$joints[1]}); // äîáàâèòü â ñåò ãîëîâó
+
+	//------------------------------------------------------------------------------------
+	// Ñòðåò÷ íà ñàìó ãîëîâó
+	string $headStretchGroup = `group -n ($HeadStretchLabel+"_group") -em -p $HeadLabel`;
+	group -n $HeadStretchLabel -em -p $headStretchGroup;
+	string $pc[] = `pointConstraint $joints[2] $headStretchGroup`;
+
+	disconnectAttr ($pc[0]+".constraintTranslateX") ($headStretchGroup+".tx");
+	disconnectAttr ($pc[0]+".constraintTranslateY") ($headStretchGroup+".ty");
+	disconnectAttr ($pc[0]+".constraintTranslateZ") ($headStretchGroup+".tz");
+
+	$plus = `createNode plusMinusAverage -n ($headStretchGroup+"_ty_plusMinusAverage")`;
+	setAttr ($plus+".operation") 2; // substract
+	connectAttr ($pc[0]+".constraintTranslate") ($plus+".input3D[0]");
+	connectAttr ($HeadStretchLabel+".t") ($plus+".input3D[1]");
+
+	connectAttr ($plus+".output3D") ($headStretchGroup+".t");
+	//---------------
+
+	addAttr -ln "scaleFactor"  -at double  -min 0.1 -max 2 -dv 1 -k true $HeadStretchLabel;
+
+	string $mult = `createNode multiplyDivide -n ($HeadStretchLabel+"_stretch_multiplyDivide")`;
+	setAttr ($mult+".operation") 2; // divide
+	setAttr ($mult+".input1Y") 1;
+	connectAttr ($HeadStretchLabel+".scaleFactor") ($mult+".input1X");
+	connectAttr ($HeadStretchLabel+".scaleFactor") ($mult+".input2Y");
+
+	// saveVolume
+	addAttr -ln "saveVolume"  -at double  -min 0 -max 1 -dv 1 -k true $HeadStretchLabel;
+
+	string $b = `createNode blendTwoAttr -n ($joints[2]+"_saveVolume_blendTwoAttr")`;
+	setAttr  ($b+".i[0]") 1;
+	connectAttr ($mult+".outputY") ($b+".i[1]");
+	connectAttr  ($HeadStretchLabel+".saveVolume") ($b+".attributesBlender");
+
+	connectAttr ($mult+".outputX") ($joints[1]+".sx");
+	connectAttr ($b+".output") ($joints[1]+".sy");
+	connectAttr ($b+".output") ($joints[1]+".sz");
+	//------------------------------------------------------------------------------------
+	// Ñòðåò÷ íà øåþ
+
+	addAttr -ln "scaleFactor"  -at double  -min 0.1 -max 2 -dv 1 -k true $HeadLabel;
+
+	$mult = `createNode multiplyDivide -n ($HeadLabel+"_stretch_multiplyDivide")`;
+	setAttr ($mult+".operation") 2; // divide
+	setAttr ($mult+".input1Y") 1;
+	connectAttr ($HeadLabel+".scaleFactor") ($mult+".input1X");
+	connectAttr ($HeadLabel+".scaleFactor") ($mult+".input2Y");
+
+	// saveVolume
+	addAttr -ln "saveVolume"  -at double  -min 0 -max 1 -dv 1 -k true $HeadLabel;
+
+	$b = `createNode blendTwoAttr -n ($joints[0]+"_saveVolume_blendTwoAttr")`;
+	setAttr  ($b+".i[0]") 1;
+	connectAttr ($mult+".outputY") ($b+".i[1]");
+	connectAttr  ($HeadLabel+".saveVolume") ($b+".attributesBlender");
+
+	connectAttr ($mult+".outputX") ($joints[0]+".sx");
+	connectAttr ($b+".output") ($joints[0]+".sy");
+	connectAttr ($b+".output") ($joints[0]+".sz");
+
+	//------------------------------------------------------------------------------------
+	// Äèíàìè÷åñêèé ïàðåíò
+	string $dynParents[] = {};
+
+	$dynParents[`size $dynParents`] = "neck="+$NeckLabel;
+
+	if (`objExists "hip_joint"`) $dynParents[`size $dynParents`] = "pelvis=hip_joint";
+	if (`size $dynParents`>0) makeDynamicParent($HeadLabel,$headDynGroup,$dynParents);
+
+	//-----------------------------------------------------------
+	createControl("circle",{$NeckLabel,$NeckLabel},{0.7,8,1},"body");
+	createControl("circle",{$HeadLabel,$HeadLabel},{1.5,8,1},"body");
+	createControl("circle",{$HeadStretchLabel,$HeadStretchLabel},{1.0,8,1},"body");
+	//-----------------------------------------------------------
+	lockAttrs($ControlsLabel,{1,1,1},{1,1,1},{1,1,1},1);
+
+	lockAttrs($neckGroup,{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($NeckLabel,{1,1,1},{0,0,0},{1,1,1},1);
+
+	lockAttrs($headDynGroup,{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($headGroup,{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($HeadLabel+"_dynamicParentPoser" ,{0,0,0},{0,0,0},{1,1,1},1);
+	lockAttrs($HeadLabel,{1,1,1},{0,0,0},{1,1,1},1);
+
+	lockAttrs($HeadStretchLabel+"_group",{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($HeadStretchLabel,{1,1,1},{1,1,1},{1,1,1},1);
+} // createHead
+//----------------------------------------------------------------------------------------------------------
+proc createShoulder(string $pref, // l_ èëè r_
+				      int $stretchRig // ñîçäàâàòü ñòðåò÷ ðèã?
+				      ){
+
+	string $ShoulderTunerLabel = "shoulder_tuner";
+	string $ArmTunerLabel = "arm_tuner";
+
+	string $JointsLabel = "shoulder_joints";
+	string $ControlsLabel = "shoulder_controls";
+	string $ShoulderLabel = "shoulder";
+
+	string $AdditionalJoints[] = {"clavicle_joint"};
+	//-----------------------------------------
+
+	float $shoulderPos[] = `getAttr ($pref+$ShoulderTunerLabel+".worldPosition")`;
+	float $armPos[] = `getAttr ($pref+$ArmTunerLabel+".worldPosition")`;
+
+	vector $shoulderVec = <<$armPos[0]-$shoulderPos[0], $armPos[1]-$shoulderPos[1], $armPos[2]-$shoulderPos[2]>>;
+	float $magShoulder = `mag $shoulderVec`;
+
+	string $jointsGroup = `group -n ($pref+$JointsLabel) -em -p "skeleton"`;
+
+	select -cl;
+
+	string $buildJoints[] = {}; // êîñòè äëÿ ïîñòðîåíèÿ ðèãà íà ïëå÷è
+
+	float $coeff = 1;
+	float $orient[] = {0,0,0};
+
+	if ($pref=="r_") {
+		$coeff=-1;
+		$orient = {180,0,0};
+	} // r_
+
+	$buildJoints[0] = `joint -p 0 0 0`;
+	$buildJoints[1] = `joint -p ($coeff*$magShoulder) 0 0 $buildJoints[0]`;
+
+	setAttr ($buildJoints[0]+".jointOrient") $orient[0] $orient[1] $orient[2];
+
+	//*************************************************
+	string $IK[] = `ikHandle -startJoint $buildJoints[0] -endEffector $buildJoints[1] -solver "ikSCsolver"`;
+
+	delete `pointConstraint ($pref+$ShoulderTunerLabel) $buildJoints[0]`; // ïîçèöèîíèðîâàíèå ïëå÷à
+	xform -ws -t $armPos[0] $armPos[1] $armPos[2] $IK[0];
+	delete `orientConstraint -offset $orient[0] $orient[1] $orient[2] ($pref+$ShoulderTunerLabel) $IK[0]`;
+
+	string $joints[] = {}; // îñíîâíûå ñóñòàâû ïëå÷
+
+	$joints[0] = `joint -p 0 0 0 -n ($pref+$ShoulderLabel+"1_joint") $jointsGroup`;
+	$joints[1] = `joint -p ($coeff*$magShoulder/2) 0 0 -n ($pref+$ShoulderLabel+"2_joint") $joints[0]`;
+	$joints[2] = `joint -p ($coeff*$magShoulder) 0 0 -n ($pref+$ShoulderLabel+"3_joint") $joints[1]`;
+
+	setAttr ($joints[0]+".jointOrient") $orient[0] $orient[1] $orient[2];
+
+	delete `parentConstraint $buildJoints[0] $jointsGroup`;
+
+	delete $buildJoints[0];
+	//***************************************************
+	// Êîíòðîëû
+	string $controlsGroup = `group -n ($pref+$ControlsLabel) -em -p "controls"`;
+
+	string $shoulderGroup = `group -n ($pref+$ShoulderLabel+"_group") -em -p $controlsGroup`;
+	string $shoulder = `group -n ($pref+$ShoulderLabel) -em -p $shoulderGroup`;
+
+	delete `parentConstraint $jointsGroup $shoulderGroup`; // âûðîâíÿòü ãðóïïû
+
+	pointConstraint $joints[0] $shoulderGroup;
+	orientConstraint -mo $shoulder $joints[0];
+
+	addAttr -ln "rotateFactor"  -at double  -min 0 -max 1 -dv 0.3 -k true $shoulder;
+
+	// Âñïîìîãàòåëüíûå ãðóïïû äëÿ âðàùåíèÿ âòîðîé êîñòè ïëå÷à
+	string $group1 = `group -n ($joints[1]+"Rotate1") -p $joints[0] -em`;
+	string $group2 = `group -n ($joints[1]+"Rotate2") -p $joints[0] -em`;
+	string $group3 = `group -n ($joints[1]+"Rotate3") -p $joints[0] -em`;
+
+	connectAttr ($joints[0]+".r") ($group2+".r");
+
+	string $oc[] = `orientConstraint $group1 $group2 $group3`;
+	setAttr ($oc[0]+".interpType") 2; // shortness
+
+	connectAttr ($group3+".r") ($joints[1]+".r");
+
+	connect_10_01($shoulder+".rotateFactor",{$oc[0]+"."+$group1+"W0"},{$oc[0]+"."+$group2+"W1"});
+
+	// Ïàðåíòèíã
+	if (`objExists $AdditionalJoints[0]`){
+		setPivots($AdditionalJoints[0],$jointsGroup);
+
+		string $pc[] = `parentConstraint -mo $AdditionalJoints[0] $jointsGroup`; // ïðèïàðåíòèòü ñóñòàâû
+		disconnectAttr ($AdditionalJoints[0]+".scale") ($pc[0]+".target[0].targetScale"); // íå ó÷èòûâàòü ñêåéë â ïàðåíòå
+
+		orientConstraint -mo $AdditionalJoints[0] $shoulderGroup; // è ñîðèåíòèðîâàòü ýëåìåíòû
+	}// $parent
+
+	// Stretch Rig
+	if ($stretchRig){
+		 setAttr ($joints[0]+".v") false;
+
+		createStretchRig({2,2},$pref+$ShoulderLabel+"1_stretchRig", {$joints[0],$joints[1]},{$joints[0],$joints[1]},{$joints[0]},$jointsGroup);
+		createStretchRig({2,2},$pref+$ShoulderLabel+"2_stretchRig", {$joints[1],$joints[2]},{$joints[1],$joints[2]},{$pref+$ShoulderLabel+"1_stretchRig_control2"},$jointsGroup);
+	} // $stretchRig
+	else 	addToSet("bindJointsSet",{$joints[0],$joints[1]}); // äîáàâèòü â ñåò
+
+	//-----------------------------------------
+	float $color = 7.0;
+	if ($pref=="r_")	 $color = 6.0;
+
+	createControl("circle",{$shoulder,$joints[1]},{1.0,$color,0},"body");
+
+	//---------------------------------------
+	// Ëîê
+	lockAttrs($jointsGroup,{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($controlsGroup,{1,1,1},{1,1,1},{1,1,1},1);
+
+	lockAttrs($shoulderGroup,{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($shoulder,{1,1,1},{0,0,0},{1,1,1},1);
+
+	lockAttrs($group1,{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($group2,{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($group3,{1,1,1},{1,1,1},{1,1,1},1);
+
+} // createShoulder
+//----------------------------------------------------------------------------------------------------------
+proc createEyes(){
+
+	string $JointsLabel = "eyes_joints";
+	string $ControlsLabel = "eyes_controls";
+	string $LookLabel = "look";
+	string $EyeLabel = "eye";
+
+	string $AdditionalJoints[] = {"head_joint","pelvis","hip_joint"};
+	//-----------------------------------------
+
+	float $l_eyePos[] = `getAttr ("l_eye_tuner.worldPosition")`;
+	float $r_eyePos[] = `getAttr ("r_eye_tuner.worldPosition")`;
+	float $lookPos[] = `getAttr ("look_tuner.worldPosition")`;
+	float $coeff = `getAttr character_tuners.controlsSize`;
+
+	vector $eyesVec = <<$r_eyePos[0]-$l_eyePos[0], $r_eyePos[1]-$l_eyePos[1], $r_eyePos[2]-$l_eyePos[2]>>; // ðàññòîÿíèå ìåæäó ãëàçàìè
+	float $eyesMag = `mag $eyesVec`;
+
+	string $jointsGroup = `group -n $JointsLabel -em -p "skeleton"`;
+
+	select -cl;
+	string $joints[] = {}; // êîñòè
+	$joints[0] = `joint -p $l_eyePos[0] $l_eyePos[1] $l_eyePos[2] -n "l_eye_joint" $jointsGroup`;
+	$joints[1] = `joint -p $r_eyePos[0] $r_eyePos[1] $r_eyePos[2] -n "r_eye_joint" $jointsGroup`;
+
+	// Êîíòðîëû
+	group -n $ControlsLabel -em -p "controls";
+
+	string $dynGroup = `group -n ($LookLabel+"_dynamicParent_group") -em -p $ControlsLabel`;
+	string $lookGroup = `group -n ($LookLabel+"_group") -em -p $dynGroup`;
+	group -n ($LookLabel+"_dynamicParentPoser") -em -p $lookGroup;
+	group -n $LookLabel -em -p $lookGroup;
+
+	delete `orientConstraint $AdditionalJoints[1] $lookGroup`; // âûðîâíÿòü look ïî òàçó
+
+	string $l_eye = `group -n ("l_"+$EyeLabel) -em -p $LookLabel`;
+	string $r_eye = `group -n ("r_"+$EyeLabel) -em -p $LookLabel`;
+	setAttr ($l_eye+".tx") ($eyesMag/2.0); // âûðîâíÿòü êîíòðîëû äëÿ êàæäîãî ãëàçà
+	setAttr ($r_eye+".tx") (-$eyesMag/2.0);
+
+	makeIdentity -apply true -t 1 -r 1 -s 1 -n 0 $l_eye;
+	makeIdentity -apply true -t 1 -r 1 -s 1 -n 0 $r_eye;
+
+	xform -ws -t $lookPos[0] $lookPos[1] $lookPos[2] $lookGroup;
+
+	aimConstraint -aimVector 0 0 1 -upVector 0 1 0 -worldUpType "none" $l_eye $joints[0];
+	aimConstraint -aimVector 0 0 1 -upVector 0 1 0 -worldUpType "none" $r_eye $joints[1];
+
+	// Ïàðåíòèíã
+	if (`objExists $AdditionalJoints[0]`){
+		setPivots($AdditionalJoints[0],$jointsGroup);
+
+		parent $jointsGroup $AdditionalJoints[0];
+		orientConstraint -mo $AdditionalJoints[0] $LookLabel;
+	}// $parent
+
+	// Äèíàìè÷åñêèé ïàðåíò
+	string $dynParents[] = {};
+
+	if (`objExists $AdditionalJoints[0]`) $dynParents[`size $dynParents`] = "head="+$AdditionalJoints[0];
+	if (`objExists $AdditionalJoints[2]`) $dynParents[`size $dynParents`] = "pelvis="+$AdditionalJoints[2];
+	if (`size $dynParents`>0) makeDynamicParent($LookLabel,$dynGroup,$dynParents);
+
+	drawHelpLine({$l_eye,$joints[0]},"l_eye",$l_eye+".v");
+	drawHelpLine({$r_eye,$joints[1]},"r_eye",$r_eye+".v");
+
+	drawHelpLine({$l_eye,$r_eye},"eyes",$LookLabel+".v");
+	//---------------------------------------------
+	createControl("rect",{$LookLabel,$LookLabel},{1.0,8,($eyesMag+0.5*$coeff)*1/$coeff,0.5,2},"eyes");
+
+	createControl("circle",{$l_eye,$l_eye},{0.2,7,2},"eyes");
+	createControl("circle",{$r_eye,$r_eye},{0.2,6,2},"eyes");
+	//---------------------------------------------
+	lockAttrs($dynGroup,{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($lookGroup,{1,1,1},{1,1,1},{1,1,1},1);
+	lockAttrs($LookLabel+"_dynamicParentPoser",{0,0,0},{0,0,0},{1,1,1},1);
+	lockAttrs($LookLabel,{0,0,0},{1,1,1},{1,1,1},1);
+
+	lockAttrs($l_eye,{0,0,1},{1,1,1},{1,1,1},1);
+	lockAttrs($r_eye,{0,0,1},{1,1,1},{1,1,1},1);
+
+} // createEye
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// ÑÅËÅÊÒÎÐ
+proc string selector_createText(string $name,string $userText,float $pos[],float $scale){
+	string $text[] = `textCurves -ch 0 -f "Arial|h-13|w400|c204" -t $userText`;
+	scale $scale $scale $scale $text[0];
+
+	string $textGroup = `group -em -n $name`;// îáùàÿ ãðóïïà ñ òåêñòîì
+
+	string $shapes[] = `listRelatives -ad -type nurbsCurve $text[0]`; // ïîëó÷àåì êðèâûå
+	string $shapesTransforms[] = {};
+
+	for ($i=0;$i<`size $shapes`;$i++){
+		string $transform[] = `listRelatives -parent $shapes[$i]`;  // è èõ ðîäèòåëåé
+		$shapesTransforms[$i] = $transform[0];
+	} // for
+
+	shapeParent($textGroup,$shapesTransforms,$name+"Shape1");
+
+	delete $text[0]; // óäàëèòü ëèøíèå ãðóïïû
+	xform -cp $textGroup; // CenterPivot
+
+	string $sp[] = `spaceLocator`;
+	setAttr ($sp[0]+".t") $pos[0] $pos[1] $pos[2]; // ïîçèöèîíèðîâàíèå ëîêàòîðà
+	delete `pointConstraint $sp[0] $textGroup`;
+
+	delete $sp[0];
+
+	makeIdentity -apply true -t 1 -r 1 -s 1 -n 0 $textGroup;
+
+	lockAttrs($textGroup,{1,1,1},{1,1,1},{1,1,1},1);
+	return $textGroup;
+}// selector_createText
+//----------------------------------------------------------------------------------------------------------------------------------------------------------
+proc string selector_createControl(string $shape,string $label,string $name,string $command,float $pos[], float $params[],string $parent){
+
+	int $color = (int)$params[0];
+	float $textWidth = $params[1];
+	string $geom = "";
+
+	switch($shape){
+		case "circle":
+			float $radius =  $params[2];
+
+			string $circle[] = `circle -c $pos[0] $pos[1] $pos[2] -nr 0 0 1 -sw 360 -r $radius -d 3 -ut 0 -tol 0.1 -s 8 -ch 0 -n $name`;
+			$geom = $circle[0];
+
+			if ($label!=""){
+				string $text = selector_createText($name,$label,{$pos[0],$pos[1],$pos[2]},$textWidth);
+				shapeParent($geom,{$text},$geom+"Shape1");
+			}// $text
+			break;
+
+		case "rect":
+			float $width = $params[2]*$params[0];
+			float $height = $params[3]*$params[0];
+
+			if ($params[4]==0)  $geom = `curve -d 1 -p 0 (-$width/2) (-$height/2) -p 0 (-$width/2) ($height/2) -p 0 (-$width/2) ($height/2) -p 0 ($width/2) ($height/2) -p 0 ($width/2) (-$height/2) -p 0 (-$width/2) (-$height/2)`;
+			if ($params[4]==1)  $geom = `curve -d 1 -p (-$width/2) 0 (-$height/2) -p (-$width/2) 0 ($height/2) -p (-$width/2) 0 ($height/2) -p ($width/2) 0 ($height/2) -p ($width/2) 0 (-$height/2) -p (-$width/2) 0 (-$height/2)`;
+			if ($params[4]==2)  $geom = `curve -d 1 -p (-$width/2) (-$height/2) 0 -p (-$width/2) ($height/2) 0 -p (-$width/2) ($height/2) 0 -p ($width/2) ($height/2) 0 -p ($width/2) (-$height/2) 0 -p (-$width/2) (-$height/2) 0`;
+			setAttr ($geom+".t") $pos[0] $pos[1] $pos[2];
+			$geom = `rename $geom $name`;
+
+			if ($label!=""){
+				string $text = selector_createText($name,$label,{$pos[0],$pos[1],$pos[2]},$textWidth);
+				shapeParent($geom,{$text},$geom+"Shape1");
+			}// $text
+			break;
+
+		default: $geom = selector_createText($name,$label,{$pos[0],$pos[1],$pos[2]},$textWidth); break;
+	}// switch
+
+	parent $geom $parent;
+	color -ud $color $geom;
+
+	addAttr -ln "script" -dt "string"  $geom;
+	setAttr ($geom+".script") -type "string" $command;
+
+	xform -cp $geom;
+
+	lockAttrs($geom,{0,0,1},{1,1,1},{1,1,1},0);
+	return $geom;
+}// selector_createControl
+//----------------------------------------------------------------------------------------------------------------------------------------------------------
+proc string[] selector_addStretchRigControls (string $baseName,float $params[],string $group){
+
+	string $selectorPostfix = "_selector";
+
+	string $stretchRigControls[] = {};
+	int $stretchRigIndexes[] = {};
+
+	float $color = $params[0];
+	float $controlSize = $params[1];
+	float $startPos = $params[2];
+	float $endPos = $params[3];
+	int $axis = (int)$params[4]; // 0 - x, 1 - y, 2 - z
+
+	for ($i=1;;$i++){ // ïðîñ÷èòàòü êîë-âî êîíòðîëîâ íà ñòðåò÷ ðèã
+		if (`objExists ($baseName+$i)`) {
+			if (`getAttr ($baseName+$i+"_group.v")`==false)  continue;
+			else $stretchRigIndexes[`size $stretchRigIndexes`] = $i;
+		}// objExists
+		else break;
+	}// for
+
+	float $step = ($startPos - $endPos)/(`size $stretchRigIndexes`+1);
+	float $pos = $startPos;
+
+	for ($i in $stretchRigIndexes){
+		$pos -= $step;
+
+		float $position[] = {};
+
+		if ($axis==0) $position = {$pos, 0,0};
+		else if ($axis==1) $position = {0.0,$pos,0};
+		else $position = {0.0,0,$pos};
+
+		$stretchRigControls[`size $stretchRigControls`] = selector_createControl("","*",$baseName+$i+$selectorPostfix,"select NAMESPACE"+$baseName+$i,$position,{$color,$controlSize},$group);
+	}// for
+
+	return $stretchRigControls;
+}// selector_addStretchRigControls
+
+//----------------------------------------------------------------------------------------------------------------------------------------------------------
+proc string[] selector_createArmLeg(string $pref,string $type){
+
+	string $selectorPostfix = "_selector";
+
+	string $ArmControlLabel; // íàçâàíèå ýëåìåíòà äëÿ ïåðåêëþ÷åíèÿ ðåæèìîâ IK FK
+
+	string $ArmLabel; // îáùåå áàçîâîå íàçâàíèå ñèñòåìû. Ñêàæåì,  arm, leg
+
+	string $ArmIKLabel; // íàçâàíèå ýëåìåíòà äëÿ IK
+	string $ElbowIKLabel; // ëîêòåâîé ïîëåâåêòîð
+
+	string $ArmFKLabel; // íàçâàíèå ïåðâîãî FK  ýëåìåíòà
+	string $ElbowFKLabel;  // íàçâàíèå âòîðîãî FK  ýëåìåíòà
+	string $HandFKLabel; //  // íàçâàíèå òðåòüåãî FK  ýëåìåíòà
+
+	float $position[] = {}; // ïîçèöèîíèðîâàíèå ðóêè èëè íîãè
+	float $rotation[] = {}; // îðèåíòàöèÿ ðóêè èëè íîãè ñåëåêòîðà
+	float $armSize; // ðàçìåð ðóêè èëè íîãè
+
+	if ($type=="arm"){ // ñîçäàíèå ðóêè
+
+		$ArmControlLabel = "arm_control";
+
+		$ArmLabel = "arm";
+
+		$ArmIKLabel = "armIK";
+		$ElbowIKLabel = "elbowIK";
+
+		$ArmFKLabel = "armFK";
+		$ElbowFKLabel = "elbowFK";
+		$HandFKLabel = "handFK";
+
+		if ($pref=="l_") {
+			$position = {1.7,5.5,0};
+			$rotation = {0,0,0};
+		}// l_
+		if ($pref=="r_") {
+			$position = {-1.7,5.5,0};
+			$rotation = {0,0,0};
+		} // r_
+
+		$armSize = 4;
+	} // arm
+	else if ($type=="leg"){  // ñîçäàíèå íîãè
+
+		$ArmControlLabel = "leg_control";
+
+		$ArmLabel = "leg";
+
+		$ArmIKLabel = "legIK";
+		$ElbowIKLabel = "kneeIK";
+
+		$ArmFKLabel = "legFK";
+		$ElbowFKLabel = "kneeFK";
+		$HandFKLabel = "footFK";
+
+		if ($pref=="l_") $position = {1,0,0};
+		if ($pref=="r_") $position = {-1,0,0};
+
+		$armSize = 5;
+	} // leg
+	else error "createArmLeg: $type must be 'arm' or 'leg'";
+
+	float $controlSize = 1;
+	float $buttonSize = 0.15;
+
+	float $color = 0;
+	if ($pref=="l_") $color = 7;
+	else $color = 6;
+	//---------------------------------------------------------------------------------------------------
+	string $group = `group -n ($pref+$ArmLabel+"_group"+$selectorPostfix) -em -p "selector"`;
+
+	string $c = `curve -n ($pref+$ArmLabel+"_curve"+$selectorPostfix) -d 1 -p 0 $armSize 0 -p 0 ($armSize/2) 0 -p 0 0 0`;
+	setAttr ($c+".template") true;
+	parent $c $group;
+
+	// FK êîíòðîëû
+	string $fkControlsGroup = `group -n ($pref+$ArmLabel+"FK_controls"+$selectorPostfix) -em -p $group`;
+	string $fkControls[] = {};
+
+	$fkControls[`size $fkControls`] = selector_createControl("","o",$pref+$ArmFKLabel+$selectorPostfix,"select NAMESPACE"+$pref+$ArmFKLabel,{0.0,$armSize,0},{$color,$controlSize},$group);
+	$fkControls[`size $fkControls`] = selector_createControl("","o",$pref+$ElbowFKLabel+$selectorPostfix,"select NAMESPACE"+$pref+$ElbowFKLabel,{0.0,$armSize/2,0},{$color,$controlSize},$group);
+	$fkControls[`size $fkControls`] = selector_createControl("","o",$pref+$HandFKLabel+$selectorPostfix,"select NAMESPACE"+$pref+$HandFKLabel,{0.0,0.0,0},{$color,$controlSize},$group);
+
+	parent $fkControls $fkControlsGroup;
+	lockAttrs($fkControlsGroup,{1,1,1},{1,1,1},{1,1,1},0);
+
+	// IK êîíòðîëû
+	string $ikControlsGroup = `group -n ($pref+$ArmLabel+"IK_controls"+$selectorPostfix) -em -p $group`;
+	string $ikControls[] = {};
+
+	$ikControls[`size $ikControls`] = selector_createControl("","o",$pref+$ElbowIKLabel+$selectorPostfix,"select NAMESPACE"+$pref+$ElbowIKLabel,{0.0,$armSize/2,0},{$color,$controlSize},$group);
+	$ikControls[`size $ikControls`] = selector_createControl("","o",$pref+$ArmIKLabel+$selectorPostfix,"select NAMESPACE"+$pref+$ArmIKLabel,{0.0,0.0,0},{$color,$controlSize},$group);
+	parent $ikControls $ikControlsGroup;
+
+	if (`objExists ($pref+$ArmLabel+"FK_controls")`)
+		connectAttr ($pref+$ArmLabel+"FK_controls.v") ($fkControlsGroup+".v");
+
+	connect_10_01($fkControlsGroup+".visibility",{$ikControlsGroup+".v"},{});
+	lockAttrs($ikControlsGroup,{1,1,1},{1,1,1},{1,1,1},1);
+	//-----------------------------------------------------------------------------------------------------------------------------
+	// Êîíòðîëû stretch Rig
+	string $stretchRigControls[] = {};
+
+	$stretchRigControls = stringArrayCatenate($stretchRigControls, selector_addStretchRigControls($pref+$ArmLabel+"1_stretchRig_control",{$color,$controlSize/1.5,$armSize,$armSize/2,1},$group));
+	$stretchRigControls = stringArrayCatenate($stretchRigControls, selector_addStretchRigControls($pref+$ArmLabel+"2_stretchRig_control",{$color,$controlSize/1.5,$armSize/2,0,1},$group));
+
+	//-----------------------------------------------------------------------------------------------------------------------------
+	float $offset = 0.9;
+	if ($pref=="r_") $offset = -0.9;
+
+	string $buttons[] = {};
+
+	$buttons[`size $buttons`] = selector_createControl("circle","ik",$pref+$ArmLabel+"_kinematicSwitch"+$selectorPostfix,"kinematicSwitch(\""+$pref+"\",\""+$ArmLabel+"\");select -cl;",{$offset,$armSize/2+1.2,0},{8.0,$buttonSize,0.4},$group);
+	$buttons[`size $buttons`] = selector_createControl("circle","p",$pref+$ArmLabel+"_changeParent"+$selectorPostfix,"selector_changeParentSelector({\"NAMESPACE"+$pref+$ArmIKLabel+"\",\"NAMESPACE"+$pref+$ElbowIKLabel+"\"});select -cl;",{$offset,$armSize/2,0},{1.0,$buttonSize,0.4},$ikControlsGroup);
+	$buttons[`size $buttons`] = selector_createControl("circle","c",$pref+$ArmControlLabel+$selectorPostfix,"select NAMESPACE"+$pref+$ArmControlLabel,{$offset,$armSize/2-1.2,0},{4.0,$buttonSize,0.4},$group);
+
+	setAttr ($group+".t") $position[0] $position[1] $position[2];
+	setAttr ($group+".r") $rotation[0] $rotation[1] $rotation[2];
+
+	lockAttrs($group,{0,0,1},{1,1,0},{0,0,1},0);
+	//----------------------------------------
+	string $controls[] = {}; // êîíòðîëû ñåëåêòîðà
+
+	$controls = stringArrayCatenate($controls, $fkControls);
+	$controls = stringArrayCatenate($controls, $ikControls);
+	$controls = stringArrayCatenate($controls, $buttons);
+	$controls = stringArrayCatenate($controls, $stretchRigControls);
+
+	return $controls;
+} // selector_createArmLeg
+//----------------------------------------------------------------------------------------------------------------------------------------------------------
+proc string[] selector_createFinger(string $pref,string $type,float $position[],float $rotation[]){
+
+	string $selectorPostfix = "_selector";
+
+	string $FingerControlLabel=$type+"_control"; // íàçâàíèå ýëåìåíòà äëÿ ïåðåêëþ÷åíèÿ ðåæèìîâ IK FK
+
+	string $FingerLabel = $type ; // îáùåå áàçîâîå íàçâàíèå ñèñòåìû. Ñêàæåì,  indexFinger, thumbFinger
+
+	string $FingerIKLabel = $type+"IK"; // íàçâàíèå ýëåìåíòà äëÿ IK
+	string $FingerIKOrientationLabel = $type + "IKOrientation"; // ïîëåâåêòîð
+	string $FingerIKRotatorLabel = $type + "IKRotator"; // âðàùåíèå ïîñëåäíåé ôàëàíãè
+
+	string $FingerTransformLabel = $type+"Transform";
+
+	string $FingerFK1Label = $type+"FK1"; // íàçâàíèå ïåðâîãî FK  ýëåìåíòà
+	string $FingerFK2Label = $type+"FK2";  // íàçâàíèå âòîðîãî FK  ýëåìåíòà
+	string $FingerFK3Label = $type+"FK3"; //  // íàçâàíèå òðåòüåãî FK  ýëåìåíòà
+
+	float $fingerSize = 2.5; // ðàçìåð ïàëüöà
+
+	float $controlSize = 0.5;
+	float $buttonSize = 0.09;
+
+	float $color = 0;
+	if ($pref=="l_") $color = 7;
+	else $color = 6;
+	//---------------------------------------------------------------------------------------------------
+	string $group = `group -n ($pref+$FingerLabel+"_group"+$selectorPostfix) -em -p "selector"`;
+
+	string $c = `curve -n ($pref+$FingerLabel+"_curve"+$selectorPostfix) -d 1 -p 0 $fingerSize 0 -p 0 (2*$fingerSize/3) 0 -p 0 ($fingerSize/3) 0 -p 0 0 0`;
+	setAttr ($c+".template") true;
+	parent $c $group;
+
+	// FK êîíòðîëû
+	string $fkControlsGroup = `group -n ($pref+$FingerLabel+"FK_controls"+$selectorPostfix) -em -p $group`;
+	string $fkControls[] = {};
+	string $othersControls[] = {};
+
+	$othersControls[`size $fkControls`] = selector_createControl("rect","",$pref+$FingerTransformLabel+$selectorPostfix,"select NAMESPACE"+$pref+$FingerTransformLabel,{0.0,$fingerSize,0},{$color,$controlSize,0.1,0.1,2},$group);
+	//------------
+	$fkControls[`size $fkControls`] = selector_createControl("","o",$pref+$FingerFK1Label+$selectorPostfix,"select NAMESPACE"+$pref+$FingerFK1Label,{0.0,$fingerSize,0},{$color,$controlSize},$group);
+	$fkControls[`size $fkControls`] = selector_createControl("","o",$pref+$FingerFK2Label+$selectorPostfix,"select NAMESPACE"+$pref+$FingerFK2Label,{0.0,2*$fingerSize/3,0},{$color,$controlSize},$group);
+	$fkControls[`size $fkControls`] = selector_createControl("","o",$pref+$FingerFK3Label+$selectorPostfix,"select NAMESPACE"+$pref+$FingerFK3Label,{0.0,$fingerSize/3,0},{$color,$controlSize},$group);
+
+	parent $fkControls $fkControlsGroup;
+	lockAttrs($fkControlsGroup,{1,1,1},{1,1,1},{1,1,1},0);
+
+	// IK êîíòðîëû
+	string $ikControlsGroup = `group -n ($pref+$FingerLabel+"IK_controls"+$selectorPostfix) -em -p $group`;
+	string $ikControls[] = {};
+
+	$ikControls[`size $ikControls`] = selector_createControl("","o",$pref+$FingerIKOrientationLabel+$selectorPostfix,"select NAMESPACE"+$pref+$FingerIKOrientationLabel,{0.0,2*$fingerSize/3,0},{$color,$controlSize},$group);
+	$ikControls[`size $ikControls`] = selector_createControl("","o",$pref+$FingerIKLabel+$selectorPostfix,"select NAMESPACE"+$pref+$FingerIKLabel,{0.0,0.0,0},{$color,$controlSize},$group);
+	$ikControls[`size $ikControls`] = selector_createControl("circle","",$pref+$FingerIKRotatorLabel+$selectorPostfix,"select NAMESPACE"+$pref+$FingerIKRotatorLabel,{0.0,0.0,0},{$color,$controlSize*1.2,0.3},$group);
+	parent $ikControls $ikControlsGroup;
+
+	if (`objExists ($pref+$FingerLabel+"FK_controls")`)
+		connectAttr ($pref+$FingerLabel+"FK_controls.v") ($fkControlsGroup+".v");
+
+	connect_10_01($fkControlsGroup+".visibility",{$ikControlsGroup+".v"},{});
+	lockAttrs($ikControlsGroup,{1,1,1},{1,1,1},{1,1,1},1);
+
+	//-----------------------------------------------------------------------------------------------------------------------------
+	// Êîíòðîëû stretch Rig
+	string $stretchRigControls[] = {};
+
+	$stretchRigControls = stringArrayCatenate($stretchRigControls, selector_addStretchRigControls($pref+$FingerLabel+"1_stretchRig_control",{$color,$controlSize,$fingerSize,2*$fingerSize/1.5,1},$group));
+	$stretchRigControls = stringArrayCatenate($stretchRigControls, selector_addStretchRigControls($pref+$FingerLabel+"2_stretchRig_control",{$color,$controlSize,2*$fingerSize/3,$fingerSize/1.5,1},$group));
+	$stretchRigControls = stringArrayCatenate($stretchRigControls, selector_addStretchRigControls($pref+$FingerLabel+"3_stretchRig_control",{$color,$controlSize,$fingerSize/1.5,0,1},$group));
+
+	//-----------------------------------------------------------------------------------------------------------------------------
+	float $offset = 0.5;
+	//if ($pref=="r_") $offset = -0.5;
+
+	string $buttons[] = {};
+
+	$buttons[`size $buttons`] = selector_createControl("circle","ik",$pref+$FingerLabel+"_kinematicSwitch"+$selectorPostfix,"kinematicSwitch(\""+$pref+"\",\""+$FingerLabel+"\");select -cl;",{$offset,$fingerSize/2+0.6,0},{8.0,$buttonSize,0.22},$group);
+	$buttons[`size $buttons`] = selector_createControl("circle","p",$pref+$FingerLabel+"_changeParent"+$selectorPostfix,"selector_changeParentSelector({\"NAMESPACE"+$pref+$FingerIKLabel+"\",\"NAMESPACE"+$pref+$FingerIKOrientationLabel+"\"});select -cl;",{$offset,$fingerSize/2,0},{1.0,$buttonSize,0.22},$ikControlsGroup);
+	$buttons[`size $buttons`] = selector_createControl("circle","c",$pref+$FingerControlLabel+$selectorPostfix,"select NAMESPACE"+$pref+$FingerControlLabel,{$offset,$fingerSize/2-0.6,0},{4.0,$buttonSize,0.22},$group);
+
+	setAttr ($group+".t") $position[0] $position[1] $position[2];
+	setAttr ($group+".r") $rotation[0] $rotation[1] $rotation[2];
+
+	lockAttrs($group,{0,0,1},{1,1,0},{0,0,1},0);
+
+	//----------------------------------------
+	string $controls[] = {}; // êîíòðîëû ñåëåêòîðà
+
+	$controls = stringArrayCatenate($controls, $othersControls);
+	$controls = stringArrayCatenate($controls, $fkControls);
+	$controls = stringArrayCatenate($controls, $ikControls);
+	$controls = stringArrayCatenate($controls, $buttons);
+	$controls = stringArrayCatenate($controls, $stretchRigControls);
+
+	return $controls;
+} // selector_createFinger
+//----------------------------------------------------------------------------------------------------------------------------------------------------------
+proc string[] selector_createFoot(string $pref,float $position[],float $rotation[],float $scale[]){
+
+	string $selectorPostfix = "_selector";
+
+	string $LegLabel = "leg";
+
+	string $FootLabel = "foot";
+	string $ToesLabel = "toes";
+	//------------------------------------------
+	float $footSize = 3;
+	float $color = 7.0;
+	if ($pref=="r_")$color = 6.0;
+
+	float $controlSize = 1;
+	//------------------------------------------
+	string $group = `group -n ($pref+$FootLabel+"_group"+$selectorPostfix) -em -p "selector"`;
+
+	string $c = `curve -n ($pref+$FootLabel+"_curve"+$selectorPostfix) -d 1 -p 0 0 0 -p ($footSize/3) 0 0 -p $footSize 0 0`;
+	setAttr ($c+".template") true;
+	parent $c $group;
+
+	// IK êîíòðîëû
+	string $ikControlsGroup = `group -n ($pref+$FootLabel+"IK_controls"+$selectorPostfix) -em -p $group`;
+	string $ikControls[] = {};
+
+	$ikControls[`size $ikControls`] = selector_createControl("circle","",$pref+$FootLabel+$selectorPostfix,"select NAMESPACE"+$pref+$FootLabel,{$footSize/3,0,0},{$color,$controlSize,0.5},$group);
+
+	parent $ikControls $ikControlsGroup;
+
+	$ikControls[`size $ikControls`] = selector_createControl("circle","",$pref+$ToesLabel+$selectorPostfix,"select NAMESPACE"+$pref+$ToesLabel,{2*$footSize/3,0,0},{$color,$controlSize,0.3},$group);
+	//------------
+	if (`objExists ($pref+$LegLabel+"IK_controls")`)
+		connectAttr ($pref+$LegLabel+"IK_controls.v") ($ikControlsGroup+".v");
+
+	lockAttrs($ikControlsGroup,{1,1,1},{1,1,1},{1,1,1},1);
+
+	//-----------------------------------------------------------------------------------------------------------------------------
+	string $controls[] = {}; // êîíòðîëû ñåëåêòîðà
+
+	$controls = stringArrayCatenate($controls, $ikControls);
+
+	setAttr ($group+".t") $position[0] $position[1] $position[2];
+	setAttr ($group+".r") $rotation[0] $rotation[1] $rotation[2];
+	setAttr ($group+".s") $scale[0] $scale[1] $scale[2];
+
+	lockAttrs($group,{0,0,1},{1,1,0},{0,0,1},0);
+
+	return $controls;
+}// selector_createFoot
+//----------------------------------------------------------------------------------------------------------------------------------------------------------
+proc string[] selector_createHand(string $pref,int $fingers[],float $position[],float $rotation[],float $scale[]){
+
+	string $controls[] = {};
+
+	string $group = `group -em -n ($pref+"hand_group_selector")`;
+	parent $group "selector";
+
+	//------------------------------------------------------
+	if ($fingers[0]) { //thumbFinger
+		$controls = stringArrayCatenate($controls, selector_createFinger($pref,"thumbFinger",{0.314  ,3.5  ,0},{0.0,0,0}));
+		parent ($pref+"thumbFinger_group_selector")  $group;
+	}// thumbFinger
+	if ($fingers[1]) { //indexFinger
+		$controls = stringArrayCatenate($controls, selector_createFinger($pref,"indexFinger",{-1.82   ,0.953  ,0},{0.0,0,-22.146 }));
+		parent ($pref+"indexFinger_group_selector")  $group;
+	}// indexFinger
+	if ($fingers[2]) { // middleFinger
+		$controls = stringArrayCatenate($controls, selector_createFinger($pref,"middleFinger",{-0.513   ,0.411   ,0},{0.0,0,-12.936 }));
+		parent ($pref+"middleFinger_group_selector")  $group;
+	}// middleFinger
+	if ($fingers[3]) { // ringFinger
+		$controls = stringArrayCatenate($controls, selector_createFinger($pref,"ringFinger",{1.244  ,0.5 ,0},{0.0,0,8.971 }));
+		parent ($pref+"ringFinger_group_selector")  $group;
+	}//  ringFinger
+	if ($fingers[4]) { // pinkyFinger
+		$controls = stringArrayCatenate($controls, selector_createFinger($pref,"pinkyFinger",{2.644 , 0.953 ,0},{0.0,0,22.414 }));
+		parent ($pref+"pinkyFinger_group_selector")  $group;
+	}// pinkyFinger
+	//-----------------------------------------------------
+	// êîíòðîë ëàäîíè
+
+	float $color = 7.0;
+	if ($pref=="r_") $color = 6.0;
+
+	$controls[`size $controls`] = selector_createControl("","o",$pref+"palm_selector","select NAMESPACE"+$pref+"palm",{-0.5,5.0,0.0},{$color,0.2},$group);
+
+	setAttr ($group+".t") $position[0] $position[1] $position[2];
+	setAttr ($group+".r") $rotation[0] $rotation[1] $rotation[2];
+	setAttr ($group+".s") $scale[0] $scale[1] $scale[2];
+
+	lockAttrs($group,{0,0,1},{1,1,0},{0,0,1},0);
+
+	return $controls;
+}// selector_createHand
+//------------------------------------------------------------------------------------------------------------------------------------------------------
+proc string[] selector_createShoulder(string $pref, float $position[],float $rotation[],float $scale[]){
+
+	string $selectorPostfix = "_selector";
+	string $ShoulderLabel = "shoulder";
+
+	string $controls[] = {}; // êîíòðîëû ñåëåêòîðà
+
+	float $shoulderSize = 1.5;
+	float $controlSize = 1;
+
+	float $color = 7.0;
+	float $coeff=1.0;
+
+	if ($pref=="r_") { // íàñòðîéêè äëÿ ïðàâîé ÷àñòè
+		$color = 6.0;
+		$coeff = -1.0;
+	}// $pref=="r_"
+
+	//-------------------------------------------------------------------------------------------------------------------
+	string $group = `group -n ($pref+$ShoulderLabel+"_group"+$selectorPostfix) -em -p "selector"`;
+
+	string $c = `curve -n ($pref+$ShoulderLabel+"_curve"+$selectorPostfix) -d 1 -p 0 0 0 -p ($coeff*$shoulderSize) 0 0`;
+	setAttr ($c+".template") true;
+	parent $c $group;
+
+	// Êîíòðîëû
+	$controls[`size $controls`] = selector_createControl("","o",$pref+$ShoulderLabel+$selectorPostfix,"select NAMESPACE"+$pref+$ShoulderLabel,{$coeff*$shoulderSize/2,0,0},{$color,$controlSize},$group);
+
+	$controls = stringArrayCatenate($controls, selector_addStretchRigControls($pref+$ShoulderLabel+"1_stretchRig_control",{$color,$controlSize/1.5,0,$coeff*$shoulderSize/2,0},$group));
+	$controls = stringArrayCatenate($controls, selector_addStretchRigControls($pref+$ShoulderLabel+"2_stretchRig_control",{$color,$controlSize/1.5,$coeff*$shoulderSize/2,$coeff*$shoulderSize,0},$group));
+	//---------------------------------------------------------------------
+	setAttr ($group+".t") $position[0] $position[1] $position[2];
+	setAttr ($group+".r") $rotation[0] $rotation[1] $rotation[2];
+	setAttr ($group+".s") $scale[0] $scale[1] $scale[2];
+
+	lockAttrs($group,{0,0,1},{1,1,0},{0,0,1},0);
+
+	return $controls;
+
+}// selector_createShoulder
+//------------------------------------------------------------------------------------------------------------------------------------------------------
+proc string[] selector_createBody(float $position[]){
+	string $selectorPostfix = "_selector";
+
+	string $controls[] = {}; // êîíòðîëû ñåëåêòîðà
+
+	float $bodySize = 4;
+	float $controlSize = 1;
+
+	string $group = `group -n ("body_group"+$selectorPostfix) -em -p "selector"`;
+
+	string $c = `curve -n ("body_curve"+$selectorPostfix) -d 1 -p 0 $bodySize 0 -p 0 0 0`;
+	setAttr ($c+".template") true;
+	parent $c $group;
+
+	// Êîíòðîëû
+	$controls[`size $controls`] = selector_createControl("","o","pelvis"+$selectorPostfix,"select NAMESPACEpelvis",{0.0,0,0},{8.0,$controlSize},$group);
+	$controls[`size $controls`] = selector_createControl("","o","hip"+$selectorPostfix,"select NAMESPACEhip",{0.0,1,0},{8.0,$controlSize},$group);
+	$controls[`size $controls`] = selector_createControl("","o","spine"+$selectorPostfix,"select NAMESPACEspine",{0.0,2,0},{8.0,$controlSize},$group);
+	$controls[`size $controls`] = selector_createControl("","o","chest"+$selectorPostfix,"select NAMESPACEchest",{0.0,4,0},{8.0,$controlSize},$group);
+
+	setAttr ($group+".t") $position[0] $position[1] $position[2];
+
+	lockAttrs($group,{0,0,1},{1,1,0},{0,0,1},0);
+
+	return $controls;
+} //  selector_createBody
+//----------------------------------------------------------------------------------------------------------------------------------------------------------
+proc string[] selector_createHead(float $position[]){
+
+	string $selectorPostfix = "_selector";
+
+	string $HeadLabel = "head";
+	string $HeadStretchLabel = "headStretch";
+	string $NeckLabel = "neck";
+	//--------------------------------
+	string $controls[] = {}; // êîíòðîëû ñåëåêòîðà
+
+	float $headSize = 2;
+	float $controlSize = 1;
+
+	string $group = `group -n ($HeadLabel+"_group"+$selectorPostfix) -em -p "selector"`;
+
+	string $c = `curve -n ($HeadLabel+"_curve"+$selectorPostfix) -d 1 -p 0 0 0 -p 0 $headSize 0 -p 0 ($headSize*2) 0`;
+	setAttr ($c+".template") true;
+	parent $c $group;
+
+	$controls[`size $controls`] = selector_createControl("","o",$NeckLabel+$selectorPostfix,"select NAMESPACE"+$NeckLabel,{0.0,0,0},{8.0,$controlSize},$group);
+	$controls[`size $controls`] = selector_createControl("","o",$HeadLabel+$selectorPostfix,"select NAMESPACE"+$HeadLabel,{0.0,$headSize,0},{8.0,$controlSize},$group);
+	$controls[`size $controls`] = selector_createControl("","o",$HeadStretchLabel+$selectorPostfix,"select NAMESPACE"+$HeadStretchLabel,{0.0,$headSize*2,0},{8.0,$controlSize},$group);
+
+	$controls[`size $controls`] = selector_createControl("circle","p",$HeadLabel+"_changeParent"+$selectorPostfix,"selector_changeParentSelector({\"NAMESPACE"+$HeadLabel+"\"});select -cl;",{0.8,$headSize,0},{1.0,$controlSize/1.5,0.4},$group);
+
+	$controls = stringArrayCatenate($controls, selector_addStretchRigControls($NeckLabel+"_stretchRig_control",{8.0,$controlSize/1.5,0,$headSize,1},$group));
+	$controls = stringArrayCatenate($controls, selector_addStretchRigControls($HeadLabel+"_stretchRig_control",{8.0,$controlSize/1.5,$headSize,$headSize*2,1},$group));
+
+	setAttr ($group+".t") $position[0] $position[1] $position[2];
+	lockAttrs($group,{0,0,1},{1,1,0},{0,0,1},0);
+
+	return $controls;
+} //  selector_createHead
+//----------------------------------------------------------------------------------------------------------------------------------------------------------
+proc string[] selector_createEyes(float $position[]){
+
+	string $selectorPostfix = "_selector";
+
+	string $LookLabel = "look";
+	string $EyeLabel = "eye";
+	//--------------------------------
+	string $controls[] = {}; // êîíòðîëû ñåëåêòîðà
+
+	float $lookSize = 1;
+	float $controlSize = 1;
+
+	string $group = `group -n ($LookLabel+"_group"+$selectorPostfix) -em -p "selector"`;
+
+	string $c = `curve -n ($LookLabel+"_curve"+$selectorPostfix) -d 1 -p 0 0 0 -p $lookSize 0 0`;
+	setAttr ($c+".template") true;
+	parent $c $group;
+
+	$controls[`size $controls`] = selector_createControl("","o",$LookLabel+$selectorPostfix,"select NAMESPACE"+$LookLabel,{$lookSize/2,0,0},{8.0,$controlSize},$group);
+	$controls[`size $controls`] = selector_createControl("","o","l_"+$EyeLabel+$selectorPostfix,"select NAMESPACEl_"+$EyeLabel,{$lookSize,0,0},{7.0,$controlSize/1.5},$group);
+	$controls[`size $controls`] = selector_createControl("","o","r_"+$EyeLabel+$selectorPostfix,"select NAMESPACEr_"+$EyeLabel,{0.0,0,0},{6.0,$controlSize/1.5},$group);
+
+	$controls[`size $controls`] = selector_createControl("circle","p",$LookLabel+"_changeParent"+$selectorPostfix,"selector_changeParentSelector({\"NAMESPACE"+$LookLabel+"\"});select -cl;",{$lookSize+0.7,0,0},{1.0,$controlSize/1.5,0.4},$group);
+
+	setAttr ($group+".t") $position[0] $position[1] $position[2];
+	lockAttrs($group,{0,0,1},{1,1,0},{0,0,1},0);
+
+	return $controls;
+} //  selector_createEyes
+//----------------------------------------------------------------------------------------------------------------------------------------------------------
+proc string[] selector_addOtherButtons(float $position[],string $characterControls[]){
+	string $selectorPostfix = "_selector";
+
+	string $GroupLabel = "buttons"+$selectorPostfix;
+	string $controls[] = {}; // êîíòðîëû ñåëåêòîðà
+
+	float $size = 0.15;
+
+	string $group = `group -n $GroupLabel -em -p "selector"`;
+	//-----------------------------------------------------------------
+	// selectAll - ñôîðìèðîâàòü ñïèñîê âñåõ îáúåêòîâ èç controls
+	string $resetAllCmd = "";
+
+	string $list[] = {};
+	for ($obj in $characterControls){
+		string $realName = `substitute "_selector" $obj ""`;
+		if (`objExists $realName`) {
+			$list[`size $list`] = "NAMESPACE"+$realName;
+
+			string $attrs[] = `listAttr -w -k $realName`;
+			for ($a in $attrs){
+				if (`getAttr -settable ($realName+"."+$a)`==0)continue;
+
+				$val = `getAttr ($realName+"."+$a)`;
+				$resetAllCmd += "setAttr NAMESPACE"+$realName+"."+$a+" "+$val+";";
+			} // for $a
+		}// if
+	}// for
+	$resetAllCmd += ";select -cl;";
+	string $selectAllCmd="select -r " + stringArrayToString($list," ");
+	//-----------------------------------------------------------------
+
+	$controls[`size $controls`] = selector_createControl("rect","all","selectAll"+$selectorPostfix,$selectAllCmd,{0.0,0,0},{8.0,$size,0.13,0.09,2},$group);
+	$controls[`size $controls`] = selector_createControl("rect","reset","reset"+$selectorPostfix,$resetAllCmd,{1.9,0,0},{8.0,$size,0.2,0.09,2},$group);
+	$controls[`size $controls`] = selector_createControl("rect","main","main"+$selectorPostfix,"select NAMESPACEmain",{4.0,0,0},{8.0,$size,0.2,0.09,2},$group);
+
+	setAttr ($group+".t") $position[0] $position[1] $position[2];
+	lockAttrs($group,{0,0,1},{1,1,0},{0,0,1},0);
+
+	return $controls;
+}// selector_addOtherButtons
+//----------------------------------------------------------------------------------------------------------------------------------------------------------
+proc selector_createMain(){
+	group -n "selector" -em -p "character";
+	reorder -r -3 "selector";
+
+	addAttr -ln "controls" -dt "string"  "selector";
+	addAttr -ln "userControls" -dt "string"  "selector";
+
+	lockAttrs("selector",{0,0,0},{0,0,0},{1,1,1},0);
+	//----------------------------------------------------
+	string $cam[] = `camera -centerOfInterest 5 -focalLength 35 -lensSqueezeRatio 1 -cameraScale 1 -horizontalFilmAperture 1.4173 -horizontalFilmOffset 0 -verticalFilmAperture 0.9449 -verticalFilmOffset 0 -filmFit Fill -overscan 1 -motionBlur 0 -shutterAngle 144 -nearClipPlane 0.01 -farClipPlane 1000 -orthographic 0 -orthographicWidth 30`;objectMoveCommand; cameraMakeNode 1 "";
+	setAttr ($cam[0]+".orthographic") 1;
+	setAttr ($cam[0]+".t") 1.5 5 0.5;
+
+	parent $cam[0] "selector";
+
+	rename $cam[0] "camera_selector";
+}//  selector_createMain
+//=============================================================================
+global proc string getStringFromUser(string $msg,string $text){
+	string $val=`promptDialog
+						-title "Autorigging System"
+						-m $msg
+						-text $text
+						-button "Ok"
+						-button "Cancel"
+						-db "Ok"
+						-cb "Cancel"`;
+
+	if ($val=="Ok") return `promptDialog -q -text`;
+	else return "";
+} //getStringFromUser
+//--------------------------------------------------------------------------------------------------
+global proc showMessage(string $msg){
+	confirmDialog -title "Autorigging System" -message $msg -button "Ok" -defaultButton "Ok";
+}//showMessage
+//--------------------------------------------------------------------------------------------------
+global proc int areYouSureDialog(string $msg){
+	string $res = `confirmDialog
+							-title "Autorigging System"
+							-message $msg
+							-button "Yes"
+							-button "No"
+							-defaultButton "Yes"
+						    -cancelButton "No"
+							-dismissString "No"`;
+
+	if ($res == "Yes")return 1;
+	return 0;
+}//areYouSureDialog
+//--------------------------------------------------------------------------------------------------
+global proc getAvailablePresets(){
+	string $dirName = `internalVar -userPresetsDir`+"AutoriggingSystemPresets";
+	string $presets[] = `getFileList -folder ($dirName+"/") -filespec "*"`;
+
+	string $items[] = `optionMenu -q -itemListLong presets_optionMenu`;
+	for ($i in $items) deleteUI -menuItem $i;
+
+	for ($p in $presets) menuItem -p "presets_optionMenu" -l $p;
+} // getAvailablePresets
+//--------------------------------------------------------------------------------------------------
+global proc createPreset(string $fileName,int $mode){
+	string $dirName = `internalVar -userPresetsDir`+"AutoriggingSystemPresets";
+	string $filePath = $dirName+"/"+$fileName;
+	sysFile -makeDir $dirName;
+
+	if ($fileName=="")return;
+	if (isValidString($fileName,"[a-zA-Z0-9_ ]+") == 0) {showMessage("Please enter a valid file name");return;}
+
+	if (`filetest -r $filePath`){
+		if ($mode==0) return;
+		if ($mode==2 && !areYouSureDialog("This preset already exists.Rewrite?")) return;
+	} // if
+
+	int $body_intFieldGrp[] = `intFieldGrp -q -v body_intFieldGrp`;
+
+	int $neck_stretchRig_checkBox = `checkBox -q -v neck_stretchRig_checkBox`;
+
+	int $neck_stretchRig_intFieldGrp[] = `intFieldGrp -q -v neck_stretchRig_intFieldGrp`;
+	int $head_stretchRig_checkBox = `checkBox -q -v head_stretchRig_checkBox`;
+
+	int $head_stretchRig_intFieldGrp[] = `intFieldGrp -q -v head_stretchRig_intFieldGrp`;
+
+	int $eyes_checkBox = `checkBox -q -v eyes_checkBox`;
+	//------------------------------------
+	int $arms_left_checkBox=`checkBox -q -v arms_left_checkBox`;
+	int $hands_left_checkBox = `checkBox -q -v hands_left_checkBox`;
+
+	int $fingers_stretchRig_checkBox =`checkBox -q -v fingers_stretchRig_checkBox`;
+	int $fingersStretchRig[] = `intFieldGrp -q -v fingers_stretchRig_intFieldGrp`;
+
+	int $finger_stretch_checkBox = `checkBox -q -v finger_stretch_checkBox`;
+
+	int $finger_thumb_checkBox = `checkBox -q -v finger_thumb_checkBox`;
+	int $finger_index_checkBox = `checkBox -q -v finger_index_checkBox`;
+	int $finger_middle_checkBox = `checkBox -q -v finger_middle_checkBox`;
+	int $finger_ring_checkBox = `checkBox -q -v finger_ring_checkBox`;
+	int $finger_pinky_checkBox = `checkBox -q -v finger_pinky_checkBox`;
+
+	int $shoulders_stretchRig_checkBox = `checkBox -q -v shoulders_stretchRig_checkBox`;
+
+	int $arms_stretch_checkBox = `checkBox -q -v arms_stretch_checkBox`;
+
+	int $arms_stretchRig_checkBox = `checkBox -q -v arms_stretchRig_checkBox`;
+	int $arms_stretchRig_intFieldGrp[] = `intFieldGrp -q -v arms_stretchRig_intFieldGrp`;
+
+	int $arms_right_checkBox = `checkBox -q -v arms_right_checkBox`;
+	int $hands_right_checkBox = `checkBox -q -v hands_right_checkBox`;
+
+	//------------------------------------
+	int $legs_left_checkBox = `checkBox -q -v legs_left_checkBox`;
+	int $legs_foot_checkBox = `checkBox -q -v legs_foot_checkBox`;
+
+	int $legs_stretch_checkBox = `checkBox -q -v legs_stretch_checkBox`;
+	int $legs_stretchRig_checkBox = `checkBox -q -v legs_stretchRig_checkBox`;
+	int $legs_stretchRig_intFieldGrp[] = `intFieldGrp -q -v legs_stretchRig_intFieldGrp`;
+
+	int $legs_right_checkBox = `checkBox -q -v legs_right_checkBox`;
+
+	int $doNotCreateRig_checkBox = `checkBox -q -v doNotCreateRig_checkBox`;
+	int $selector_checkBox = `checkBox -q -v selector_checkBox`;
+	//-----------------------------------------
+	int $fid = `fopen $filePath "w"`;
+	fprint $fid ("intFieldGrp -e -v "+$body_intFieldGrp[0]+" "+$body_intFieldGrp[1]+" "+$body_intFieldGrp[2]+" 0 body_intFieldGrp;\n");
+
+	fprint $fid ("checkBox -e -v "+$neck_stretchRig_checkBox+"  neck_stretchRig_checkBox;\n");
+
+	fprint $fid ("intFieldGrp -e -v "+$neck_stretchRig_intFieldGrp[0]+" "+$neck_stretchRig_intFieldGrp[1]+" "+$neck_stretchRig_intFieldGrp[2]+" 0 neck_stretchRig_intFieldGrp;\n");
+
+	fprint $fid ("checkBox -e -v "+$head_stretchRig_checkBox+"  head_stretchRig_checkBox;\n");
+	fprint $fid ("intFieldGrp -e -v "+$head_stretchRig_intFieldGrp[0]+" "+$head_stretchRig_intFieldGrp[1]+" "+$head_stretchRig_intFieldGrp[2]+" 0 head_stretchRig_intFieldGrp;\n");
+
+	fprint $fid ("checkBox -e -v "+$eyes_checkBox+"  eyes_checkBox;\n");
+
+	fprint $fid ("checkBox -e -v "+$arms_left_checkBox+"  arms_left_checkBox;\n");
+	fprint $fid ("checkBox -e -v "+$hands_left_checkBox+"  hands_left_checkBox;\n");
+
+	fprint $fid ("checkBox -e -v "+$fingers_stretchRig_checkBox+"  fingers_stretchRig_checkBox;\n");
+	fprint $fid ("intFieldGrp -e -v "+$fingersStretchRig[0]+" "+$fingersStretchRig[1]+" "+$fingersStretchRig[2]+" 0 fingers_stretchRig_intFieldGrp;\n");
+
+	fprint $fid ("checkBox -e -v "+$finger_stretch_checkBox+"  finger_stretch_checkBox;\n");
+
+	fprint $fid ("checkBox -e -v "+$finger_thumb_checkBox+"  finger_thumb_checkBox;\n");
+
+	fprint $fid ("checkBox -e -v "+$finger_thumb_checkBox+"  finger_thumb_checkBox;\n");
+	fprint $fid ("checkBox -e -v "+$finger_index_checkBox+"  finger_index_checkBox;\n");
+	fprint $fid ("checkBox -e -v "+$finger_middle_checkBox+"  finger_middle_checkBox;\n");
+	fprint $fid ("checkBox -e -v "+$finger_ring_checkBox+"  finger_ring_checkBox;\n");
+	fprint $fid ("checkBox -e -v "+$finger_pinky_checkBox+"  finger_pinky_checkBox;\n");
+
+	fprint $fid ("checkBox -e -v "+$shoulders_stretchRig_checkBox+"  shoulders_stretchRig_checkBox;\n");
+
+	fprint $fid ("checkBox -e -v "+$arms_stretch_checkBox+"  arms_stretch_checkBox;\n");
+	fprint $fid ("checkBox -e -v "+$arms_stretchRig_checkBox+"  arms_stretchRig_checkBox;\n");
+	fprint $fid ("intFieldGrp -e -v "+$arms_stretchRig_intFieldGrp[0]+" "+$arms_stretchRig_intFieldGrp[1]+" "+$arms_stretchRig_intFieldGrp[2]+" 0 arms_stretchRig_intFieldGrp;\n");
+
+	fprint $fid ("checkBox -e -v "+$arms_right_checkBox+"  arms_right_checkBox;\n");
+	fprint $fid ("checkBox -e -v "+$hands_right_checkBox+"  hands_right_checkBox;\n");
+
+	fprint $fid ("checkBox -e -v "+$legs_left_checkBox+"  legs_left_checkBox;\n");
+	fprint $fid ("checkBox -e -v "+$legs_foot_checkBox+"  legs_foot_checkBox;\n");
+
+	fprint $fid ("checkBox -e -v "+$legs_stretch_checkBox+"  legs_stretch_checkBox;\n");
+	fprint $fid ("checkBox -e -v "+$legs_stretchRig_checkBox+"  legs_stretchRig_checkBox;\n");
+
+	fprint $fid ("intFieldGrp -e -v "+$legs_stretchRig_intFieldGrp[0]+" "+$legs_stretchRig_intFieldGrp[1]+" "+$legs_stretchRig_intFieldGrp[2]+" 0 legs_stretchRig_intFieldGrp;\n");
+
+	fprint $fid ("checkBox -e -v "+$legs_right_checkBox+"  legs_right_checkBox;\n");
+
+	fprint $fid ("checkBox -e -v "+$doNotCreateRig_checkBox+"  doNotCreateRig_checkBox;\n");
+	fprint $fid ("checkBox -e -v "+$selector_checkBox+"  selector_checkBox;\n");
+
+	fclose $fid;
+
+	getAvailablePresets();
+}//createPreset
+//-------------------------------------------------------------------------
+global proc loadPreset(string $file){
+	string $path = `internalVar -userPresetsDir`+"AutoriggingSystemPresets/"+$file;
+
+	if (!`filetest -r $path` || $file=="") return;
+
+	eval("source \""+$path+"\"");
+}// loadPreset
+//-------------------------------------------------------------------------
+global proc savePreset(){
+	string $preset=`optionMenu -q -v presets_optionMenu`;
+	string $file=getStringFromUser("Enter preset's name",$preset);
+
+	if ($file=="default"){showMessage("Cannot rewrite default preset");return;}
+
+	createPreset($file,2);
+} //savePreset
+//-------------------------------------------------------------------------
+global proc deletePreset(){
+	string $preset = `optionMenu -q -v presets_optionMenu`;
+	if ($preset=="default") {showMessage("Cannot delete default preset");return;}
+	string $path = `internalVar -userPresetsDir`+"AutoriggingSystemPresets/"+$preset;
+
+	if (areYouSureDialog("Do you really want to delete this preset?")){
+		sysFile -del $path;
+		getAvailablePresets();
+	}// if
+} // deletePreset
+//-------------------------------------------------------------------------
+proc creationInterface(){
+	string $window = "creationInterfaceWnd";
+	int $width = 400;
+	int $height = 685;
+
+	if (`windowPref -exists $window`) windowPref -remove $window;
+	if (`window -exists $window`) deleteUI -wnd $window;
+
+	window -title "Autorigging System" -w $width  -h $height -sizeable false $window;
+	columnLayout -adj true -rs 5;
+
+	formLayout frmLayout;
+
+	optionMenu -label "Presets" presets_optionMenu;
+
+	button -l "Save" -c "savePreset()" presets_save_button;
+	button -l "Load" -c "loadPreset(`optionMenu -q -v presets_optionMenu`)" presets_load_button;
+	button -l "Delete" -c "deletePreset()" presets_delete_button;
+
+	formLayout -e
+		-attachForm presets_optionMenu "left" 5
+		-attachControl presets_save_button "left" 5 presets_optionMenu
+		-attachControl presets_load_button "left" 5 presets_save_button
+		-attachControl presets_delete_button "left" 5 presets_load_button
+		frmLayout;
+
+	setParent ..;
+	//-------------------------------------------------------------------
+	frameLayout -l "Body, head, eyes" -lv true -cll false -w $width;
+		columnLayout;
+		intFieldGrp
+			-numberOfFields 3
+			-label "Body joints"
+			-value1 1
+			-value2 2
+			-value3 1 body_intFieldGrp;
+
+		separator -w $width;
+		checkBox -label "Neck stretch rig" -v false
+			-onc "intFieldGrp -e -en true neck_stretchRig_intFieldGrp"
+			-ofc "intFieldGrp -e -en false neck_stretchRig_intFieldGrp" neck_stretchRig_checkBox;
+
+		intFieldGrp
+			-en false
+			-numberOfFields 2
+			-label "Stretch Rig (joints, controls)"
+			-value1 4
+			-value2 3 neck_stretchRig_intFieldGrp;
+		//------------------
+		separator -w $width;
+		checkBox -label "Head stretch rig" -v false
+			-onc "intFieldGrp -e -en true head_stretchRig_intFieldGrp"
+			-ofc "intFieldGrp -e -en false head_stretchRig_intFieldGrp" head_stretchRig_checkBox;
+
+		intFieldGrp
+			-en false
+			-numberOfFields 2
+			-label "Stretch Rig (joints, controls)"
+			-value1 4
+			-value2 3 head_stretchRig_intFieldGrp;
+
+		separator -w $width;
+		checkBox -label "Eyes" -v true eyes_checkBox;
+
+		setParent ..;setParent ..;
+	//-------------------------------------------------------------------
+	frameLayout -l "Arms and shoulders" -lv true -cll false -w $width;
+		columnLayout;
+		rowLayout -nc 2;
+			checkBox -label "Left"
+						  -v true
+						  -onc "checkBox -e -v 1 -en true hands_left_checkBox"
+						  -ofc "checkBox -e -v 0 -en false hands_left_checkBox"  arms_left_checkBox;
+
+			checkBox -label "Right"
+						  -v true
+						  -onc "checkBox -e -v 1 -en true hands_right_checkBox"
+						  -ofc "checkBox -e -v 0 -en false hands_right_checkBox"
+						  arms_right_checkBox;
+
+			setParent ..;
+
+		checkBox -label "Stretchable" -v true arms_stretch_checkBox;
+		separator -w $width;
+		checkBox -label "Shoulder stretch rig" -v true shoulders_stretchRig_checkBox;
+
+		checkBox -label "Arm stretch rig" -v true
+			-onc "intFieldGrp -e -en true arms_stretchRig_intFieldGrp"
+			-ofc "intFieldGrp -e -en false arms_stretchRig_intFieldGrp" arms_stretchRig_checkBox;
+
+		intFieldGrp
+			-numberOfFields 2
+			-label "Stretch Rig (joints, controls)"
+			-value1 4
+			-value2 3 arms_stretchRig_intFieldGrp;
+
+		setParent ..;setParent ..;
+	//-------------------------------------------------------------------
+	frameLayout -l "Hands and fingers" -lv true -cll false -w $width;
+		columnLayout;
+		rowLayout -nc 2;
+			checkBox -label "Left" -v true hands_left_checkBox;
+			checkBox -label "Right" -v true hands_right_checkBox;
+			setParent ..;
+
+		checkBox -label "Stretchable" -v true finger_stretch_checkBox;
+
+		separator -w $width;
+		checkBox -label "Thumb finger" -v true finger_thumb_checkBox;
+		checkBox -label "Index finger" -v true finger_index_checkBox;
+		checkBox -label "Middle finger" -v true finger_middle_checkBox;
+		checkBox -label "Ring finger" -v true finger_ring_checkBox;
+		checkBox -label "Pinky finger" -v true finger_pinky_checkBox;
+
+		separator -w $width;
+		checkBox -label "Fingers stretch rig" -v false
+			-onc "intFieldGrp -e -en true fingers_stretchRig_intFieldGrp"
+			-ofc "intFieldGrp -e -en false fingers_stretchRig_intFieldGrp" fingers_stretchRig_checkBox;
+
+		intFieldGrp
+			-en false
+			-numberOfFields 2
+			-label "Stretch Rig (joints, controls)"
+			-value1 4
+			-value2 3 fingers_stretchRig_intFieldGrp;
+		setParent ..;setParent ..;
+	//-------------------------------------------------------------------
+	frameLayout -l "Legs and feet" -lv true -cll false -w $width;
+		columnLayout;
+		rowLayout -nc 2;
+			checkBox -label "Left" -v true legs_left_checkBox;
+			checkBox -label "Right" -v true legs_right_checkBox;
+			setParent ..;
+
+		checkBox -label "Stretchable" -v true legs_stretch_checkBox;
+		separator -w $width;
+		checkBox -label "Leg stretch rig" -v true
+			-onc "intFieldGrp -e -en true legs_stretchRig_intFieldGrp"
+			-ofc "intFieldGrp -e -en false legs_stretchRig_intFieldGrp" legs_stretchRig_checkBox;
+
+		intFieldGrp
+			-numberOfFields 2
+			-label "Stretch Rig (joints, controls)"
+			-value1 4
+			-value2 3 legs_stretchRig_intFieldGrp;
+
+		separator -w $width;
+		checkBox -label "Foot" -v true legs_foot_checkBox;
+
+		setParent ..;setParent ..;
+
+	columnLayout;
+	checkBox -label "Do not create rig at all" -v false doNotCreateRig_checkBox;
+	checkBox -label "Create selector for it" -v true selector_checkBox;
+	setParent ..;
+	separator -w $width;
+	//-------------------------------------------------------------------
+	button -label "Make" -c "makeCharacter()";
+	showWindow $window;
+
+	createPreset("default",0);
+
+	getAvailablePresets();
+} // creationInterface
+//---------------------------------------------------------------------------------------------------------------
+proc checkTuners(string $type){
+	string $tuners[] = {};// òþíåðû äëÿ ïðîâåðêè
+
+	switch ($type){
+		case "body":$tuners = {"pelvis_tuner","spine_tuner","chest_tuner","clavicle_tuner","neck_tuner","head_end_tuner","look_tuner","r_eye_tuner","l_eye_tuner","head_tuner"}; break;
+
+		case "arms":$tuners = {"l_hand_tuner","l_elbow_tuner","l_arm_tuner","l_shoulder_tuner",
+										  "r_hand_tuner","r_elbow_tuner","r_arm_tuner","r_shoulder_tuner"};break;
+
+		case "hands":$tuners = {"l_indexFinger1_tuner","l_indexFinger2_tuner","l_indexFinger3_tuner","l_indexFinger4_tuner","l_middleFinger1_tuner","l_middleFinger2_tuner","l_middleFinger3_tuner","l_middleFinger4_tuner","l_ringFinger1_tuner","l_ringFinger2_tuner","l_ringFinger3_tuner","l_ringFinger4_tuner","l_pinkyFinger1_tuner","l_pinkyFinger2_tuner","l_pinkyFinger3_tuner","l_pinkyFinger4_tuner","l_hand2_tuner","l_thumbFinger4_tuner","l_thumbFinger3_tuner","l_thumbFinger2_tuner","l_thumbFinger1_tuner","l_hand_tuner",
+										   "r_indexFinger1_tuner","r_indexFinger2_tuner","r_indexFinger3_tuner","r_indexFinger4_tuner","r_middleFinger1_tuner","r_middleFinger2_tuner","r_middleFinger3_tuner","r_middleFinger4_tuner","r_ringFinger1_tuner","r_ringFinger2_tuner","r_ringFinger3_tuner","r_ringFinger4_tuner","r_pinkyFinger1_tuner","r_pinkyFinger2_tuner","r_pinkyFinger3_tuner","r_pinkyFinger4_tuner","r_hand2_tuner","r_thumbFinger4_tuner","r_thumbFinger3_tuner","r_thumbFinger2_tuner","r_thumbFinger1_tuner","r_hand_tuner"};break;
+
+		case "feet":$tuners = {"l_foot1_tuner","l_foot2_tuner","l_toe_tuner","l_heel_tuner",
+										"r_foot1_tuner","r_foot2_tuner","r_toe_tuner","r_heel_tuner"};break;
+
+	}//switch
+
+	for ($t in $tuners)
+		if (!`objExists $t`) error ("checkTuners: cannot find '"+$t+"' tuner. Creation is skipped");
+}// checkTuners
+//---------------------------------------------------------------------------------------------------------------
+global proc makeCharacter(){
+
+	if (`checkBox -q -v doNotCreateRig_checkBox`==false){
+
+		if (!`objExists character_tuners`) error "makeCharacter: cannot find 'characters_tuners' to generate rig";
+
+		float $rotY = `getAttr character_tuners.ry`;
+		if  ($rotY%90 != 0) error "makeCharacter: character_tuners.ry must be 0, 90, 180, -180, -90";
+
+		checkTuners("body");
+		checkTuners("arms");
+		checkTuners("legs");
+		checkTuners("hands");
+		checkTuners("feet");
+		//------------------------------------
+		createMainHierarchy(); // îñíîâíûå ãðóïïû
+		//------------------------------------
+		int $body[] = `intFieldGrp -q -v body_intFieldGrp`;
+		createBody({$body[0],$body[1],$body[2]}); // òåëî
+
+		int $neckStretch[] = {};
+		int $headStretch[] = {};
+
+		if (`checkBox -q -v neck_stretchRig_checkBox`==true) $neckStretch = `intFieldGrp -q -v neck_stretchRig_intFieldGrp`;
+		if (`checkBox -q -v head_stretchRig_checkBox`==true) $headStretch = `intFieldGrp -q -v head_stretchRig_intFieldGrp`;
+
+		createHead($neckStretch,$headStretch);
+
+		if (`checkBox -q -v eyes_checkBox`==true)createEyes(); // ãëàçà
+		//------------------------------------
+		if (`checkBox -q -v arms_left_checkBox`) {// ëåâàÿ ðóêà
+			if (`checkBox -q -v hands_left_checkBox`) {// ëåâàÿ êèñòü
+				int $fingersStretchRig[] = {};
+
+				if (`checkBox -q -v fingers_stretchRig_checkBox`)$fingersStretchRig = `intFieldGrp -q -v fingers_stretchRig_intFieldGrp`;
+
+				int $stretchable = `checkBox -q -v finger_stretch_checkBox`;
+
+				int $thumb = `checkBox -q -v finger_thumb_checkBox`;
+				int $index = `checkBox -q -v finger_index_checkBox`;
+				int $middle = `checkBox -q -v finger_middle_checkBox`;
+				int $ring = `checkBox -q -v finger_ring_checkBox`;
+				int $pinky = `checkBox -q -v finger_pinky_checkBox`;
+
+				createHand("l_",{$thumb,$index,$middle,$ring,$pinky},$fingersStretchRig,$stretchable); // ëåâàÿ êèñòü
+			} // if ëåâàÿ êèñòü
+
+			createShoulder("l_",`checkBox -q -v shoulders_stretchRig_checkBox`); // ëåâîå ïëå÷î
+
+			int $stretchable = `checkBox -q -v arms_stretch_checkBox`;
+			int $armsStretchRig[] = {};
+
+			if (`checkBox -q -v arms_stretchRig_checkBox`) $armsStretchRig = `intFieldGrp -q -v arms_stretchRig_intFieldGrp`;
+
+			createArmLeg ("l_","arm", $stretchable, $armsStretchRig); // ëåâàÿ ðóêà
+		} // if ëåâàÿ ðóêà
+
+		if (`checkBox -q -v arms_right_checkBox`) {// ïðàâàÿ ðóêà
+			if (`checkBox -q -v hands_right_checkBox`) {// ïðàâàÿ êèñòü
+					int $fingersStretchRig[] = {};
+
+					if (`checkBox -q -v fingers_stretchRig_checkBox`)$fingersStretchRig = `intFieldGrp -q -v fingers_stretchRig_intFieldGrp`;
+
+					int $stretchable = `checkBox -q -v finger_stretch_checkBox`;
+
+					int $thumb = `checkBox -q -v finger_thumb_checkBox`;
+					int $index = `checkBox -q -v finger_index_checkBox`;
+					int $middle = `checkBox -q -v finger_middle_checkBox`;
+					int $ring = `checkBox -q -v finger_ring_checkBox`;
+					int $pinky = `checkBox -q -v finger_pinky_checkBox`;
+
+					createHand("r_",{$thumb,$index,$middle,$ring,$pinky},$fingersStretchRig,$stretchable); // ïðàâàÿ êèñòü
+
+			} // if ëåâàÿ ïðàâàÿ
+
+			createShoulder("r_",`checkBox -q -v shoulders_stretchRig_checkBox`); // ïðàâîå ïëå÷î
+
+			int $stretchable = `checkBox -q -v arms_stretch_checkBox`;
+			int $armsStretchRig[] = {};
+
+			if (`checkBox -q -v arms_stretchRig_checkBox`)  $armsStretchRig = `intFieldGrp -q -v arms_stretchRig_intFieldGrp`;
+
+			createArmLeg ("r_","arm", $stretchable, $armsStretchRig); // ïðàâàÿ ðóêà
+		} // if ïðàâàÿ ðóêà
+		//------------------------------------
+		if (`checkBox -q -v legs_left_checkBox`) {// ëåâàÿ íîãà
+
+			if (`checkBox -q -v legs_foot_checkBox`) createFoot("l_"); // ñòîïà
+
+			int $stretchable = `checkBox -q -v legs_stretch_checkBox`;
+			int $legsStretchRig[] = {};
+
+			if (`checkBox -q -v legs_stretchRig_checkBox`) $legsStretchRig = `intFieldGrp -q -v legs_stretchRig_intFieldGrp`;
+
+			createArmLeg ("l_","leg", $stretchable, $legsStretchRig); // ëåâàÿ íîãà
+		} // if ëåâàÿ íîãà
+
+		if (`checkBox -q -v legs_right_checkBox`) {// ïðàâàÿ íîãà
+
+			if (`checkBox -q -v legs_foot_checkBox`) createFoot("r_"); // ñòîïà
+
+			int $stretchable = `checkBox -q -v legs_stretch_checkBox`;
+			int $legsStretchRig[] = {};
+
+			if (`checkBox -q -v legs_stretchRig_checkBox`) $legsStretchRig = `intFieldGrp -q -v legs_stretchRig_intFieldGrp`;
+
+			createArmLeg ("r_","leg", $stretchable, $legsStretchRig); // ïðàâàÿ íîãà
+		} // if ëåâàÿ íîãà
+	} // doNotCreateRig_checkBox
+	//=============================================
+
+	if (`checkBox -q -v selector_checkBox`==true){
+		selector_createMain();
+
+		string $controls[] = {}; // êîíòðîëû ñåëåêòîðà
+
+		$controls = stringArrayCatenate($controls, selector_createBody({0.0,5.0,0.0}));
+		$controls = stringArrayCatenate($controls, selector_createHead({0.0,10,0}));
+
+		if (`checkBox -q -v eyes_checkBox`==true) // ãëàçà
+			$controls = stringArrayCatenate($controls, selector_createEyes({0.8,11,0}));
+
+		if (`checkBox -q -v arms_left_checkBox`) {// ëåâàÿ ðóêà
+			$controls = stringArrayCatenate($controls, selector_createShoulder("l_",{0.5,10,0},{0.0,0,0},{1.0,1,1}));
+			$controls = stringArrayCatenate($controls, selector_createArmLeg("l_","arm"));
+		} // ëåâàÿ ðóêà
+
+		if (`checkBox -q -v arms_right_checkBox`) {// ïðàâàÿ ðóêà
+			$controls = stringArrayCatenate($controls, selector_createShoulder("r_",{-0.5,10,0},{0.0,0,0},{1.0,1,1}));
+			$controls = stringArrayCatenate($controls, selector_createArmLeg("r_","arm"));
+		} // ïðàâàÿ ðóêà
+
+		if (`checkBox -q -v legs_left_checkBox`) { // ëåâàÿ íîãà
+			$controls = stringArrayCatenate($controls, selector_createArmLeg("l_","leg"));
+
+			if (`checkBox -q -v legs_foot_checkBox`) 	// ñòîïà
+				$controls = stringArrayCatenate($controls, selector_createFoot("l_",{4.0 ,1.2,0},{0.0,0,0},{1.0,1,1}));
+		}  // ëåâàÿ íîãà
+
+		if (`checkBox -q -v legs_right_checkBox`){ // ïðàâàÿ íîãà
+			$controls = stringArrayCatenate($controls, selector_createArmLeg("r_","leg"));
+
+			if (`checkBox -q -v legs_foot_checkBox`) 	// ñòîïà
+				$controls = stringArrayCatenate($controls, selector_createFoot("r_",{4.0 ,0.0,0},{0.0,0,0},{1.0,1,1}));
+		} // ïðàâàÿ íîãà
+
+		if (`checkBox -q -v hands_left_checkBox`) {// ëåâàÿ êèñòü
+
+			int $thumb = `checkBox -q -v finger_thumb_checkBox`;
+			int $index = `checkBox -q -v finger_index_checkBox`;
+			int $middle = `checkBox -q -v finger_middle_checkBox`;
+			int $ring = `checkBox -q -v finger_ring_checkBox`;
+			int $pinky = `checkBox -q -v finger_pinky_checkBox`;
+
+			$controls = stringArrayCatenate($controls, selector_createHand("l_",{$thumb,$index,$middle,$ring,$pinky},{5.5,8 ,0},{0.0,0,0},{1.0,1,1}));
+		} // ëåâàÿ êèñòü
+
+		if (`checkBox -q -v hands_right_checkBox`) {// ïðàâàÿ êèñòü
+			int $thumb = `checkBox -q -v finger_thumb_checkBox`;
+			int $index = `checkBox -q -v finger_index_checkBox`;
+			int $middle = `checkBox -q -v finger_middle_checkBox`;
+			int $ring = `checkBox -q -v finger_ring_checkBox`;
+			int $pinky = `checkBox -q -v finger_pinky_checkBox`;
+
+			$controls = stringArrayCatenate($controls, selector_createHand("r_",{$thumb,$index,$middle,$ring,$pinky},{5.5 ,2,0},{0.0,0,0},{1.0,1,1}));
+		} // ëåâàÿ êèñòü
+
+		$controls = stringArrayCatenate($controls, selector_addOtherButtons({-1.0,-1.5,0},$controls));
+
+		string $controlsStr = stringArrayToString($controls," ");
+		setAttr ("selector.controls") -type "string" $controlsStr;
+		setAttr -l true ("selector.controls");
+
+		setAttr "selector.tx" 50;// ñäâèíóòü ïîäàëüøå ñåëåêòîð
+	}// if selector_checkBox == true
+
+	parent "character_tuners" "character";
+	setAttr "character_tuners.v" false;
+	reorder -f "character_tuners";
+	select -cl;
+}// makeCharacter
+
+creationInterface();
