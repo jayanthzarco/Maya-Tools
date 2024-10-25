@@ -41,7 +41,9 @@ class NodeNames:
             'extras': 'Extras',
             'skn_jnts_grp': 'Skn_Jnts_Group',
             'ctrls_group': 'Ctrl_Group',
-            'placement_jnts_grp': 'Placements_Jnts_Group'
+            'placement_jnts_grp': 'Placements_Jnts_Group',
+            'placement_ctrl': 'Placement_Ctrl',
+            'main_ctrl': 'Main_Ctrl'
         }
 
 
@@ -241,7 +243,7 @@ class LocationJoint(NodeNames):
             if cmds.objExists(item):
                 error_obj.append(item)
         if error_obj:
-            self.msg_ui.show(", ".join(error_obj)+" already exists in the scene")
+            self.msg_ui.show(", ".join(error_obj) + " already exists in the scene")
             return True
 
     def build_asset(self):
@@ -267,12 +269,88 @@ class LocationJoint(NodeNames):
 class GenerateRig(NodeNames):
     def __init__(self):
         super().__init__()
+        self.ctrls_shapes = ControlShapes()
         self.build_rig()
 
     def build_rig(self):
         # creating globe ctrls and checking asset
-        pass
+        main_ctrl = self.ctrls_shapes.circle(name=self.asset_names['main_ctrl'], radius=3, color=13)
 
+        plc_ctrl = self.ctrls_shapes.circle(name=self.asset_names['placement_ctrl'], radius=2.5, color=6)
+        plc_grp = cmds.group(plc_ctrl, name=plc_ctrl + "_Group")
+        cmds.parent(main_ctrl, self.asset_names['ctrls_group'])
+        cmds.parent(plc_grp, main_ctrl)
+
+
+        # cube
+        cube = self.ctrls_shapes.cube(color=13, name="IK_CTRL")
+        plus = self.ctrls_shapes.plus()
+
+
+class ControlShapes:
+    @staticmethod
+    def circle(name='circle', radius=1.0, color=1):
+        circle = cmds.circle(name=name, radius=radius,center=(0, 0, 0), normal=(0, 1, 0), ch=0)[0]
+        shape_node = cmds.listRelatives(circle, shapes=True)[0]
+        cmds.setAttr(shape_node+".overrideEnabled", 1)
+        cmds.setAttr(shape_node + ".overrideColor", color)
+        return circle
+
+    @staticmethod
+    def plus(name="plus", color=18):
+        points = [
+            (-1, 0.25, -0.00218529),
+            (-0.251826, 0.249337, -0.00218529),
+            (-0.25, 1, -0.00218529),
+            (0.25, 1, -0.00218529),
+            (0.250501, 0.249337, -0.00218529),
+            (1, 0.25, -0.00218529),
+            (1, -0.25, -0.00218529),
+            (0.250501, -0.249499, -0.00218529),
+            (0.25, -1, -0.00218529),
+            (-0.25, -1, -0.00218529),
+            (-0.251826, -0.249499, -0.00218529),
+            (-1, -0.25, -0.00218529),
+            (-1, 0.25, -0.00218529)
+        ]
+
+        curve = cmds.curve(name=name, degree=1, point=points)
+
+        shape_node = cmds.listRelatives(curve, shapes=True)[0]
+        cmds.setAttr(shape_node+".overrideEnabled", 1)
+        cmds.setAttr(shape_node + ".overrideColor", color)
+        return curve
+
+    @staticmethod
+    def cube(color=1, name='curve'):
+        points = [
+            (-1, 0.05, -1),
+            (-1, 0.05, 1),
+            (1, 0.05, 1),
+            (1, 0.05, -1),
+            (-1, 0.05, -1),
+            (-1, -0.05, -1),
+            (1, -0.05, -1),
+            (1, -0.05, 1),
+            (-1, -0.05, 1),
+            (-1, -0.05, -1),
+            (-1, 0.05, -1),
+            (-1, 0.05, 1),
+            (-1, -0.05, 1),
+            (1, -0.05, 1),
+            (1, 0.05, 1),
+            (1, 0.05, -1),
+            (1, -0.05, -1),
+            (-1, -0.05, -1),
+            (-1, 0.05, -1)
+        ]
+
+        # Create the curve with degree 1
+        curve_ = cmds.curve(name=name, degree=1, point=points)
+        shape_node = cmds.listRelatives(curve_, shapes=True)[0]
+        cmds.setAttr(shape_node+".overrideEnabled", 1)
+        cmds.setAttr(shape_node + ".overrideColor", color)
+        return curve_
 
 
 if __name__ == "__main__":
