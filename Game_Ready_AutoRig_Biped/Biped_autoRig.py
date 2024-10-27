@@ -298,10 +298,20 @@ class GenerateRig(NodeNames):
         super().__init__()
         self.ctrls_shapes = ControlShapes()
         self.custom_rig = Rig_Customs()
+        self.msg_ui = InfoMessageBox()
         self.build_rig()
 
     def build_rig(self):
-        # creating globe ctrls and checking asset
+        # checking rotation
+        jnt = self.custom_rig.find_joints_with_rotation()
+        if jnt:
+            self.msg_ui.show(', '.join(jnt)+" check the rotation and orientation fix it")
+            return
+        else:
+            pass
+
+        # creating global ctrls
+
         main_ctrl = self.ctrls_shapes.circle(name=self.asset_names['main_ctrl'], radius=3, color=6)
 
         plc_ctrl = self.ctrls_shapes.cog(name=self.asset_names['placement_ctrl'], color=13)
@@ -336,6 +346,16 @@ class GenerateRig(NodeNames):
 
         # create a bind joints for ik
         spine_bind_jnts = self.custom_rig.joint_along_the_curve(no_of_joints=3, curve=spine_curve)
+        cmds.parent(spine_bind_jnts[1], world=True)
+        cmds.matchTransform(spine_bind_jnts[0], self.skin_jnts['spine_01'])
+        cmds.parent(spine_bind_jnts[1], spine_bind_jnts[0])
+        cmds.matchTransform(spine_bind_jnts[1], spine_bind_jnts[0], rot=True)
+        cmds.makeIdentity(spine_bind_jnts[0], apply=True, translate=False, rotate=True, scale=True, normal=False,
+                          preserveNormals=True)
+
+        cmds.matchTransform(spine_bind_jnts[-1], self.skin_jnts['spine_04'])
+        cmds.makeIdentity(spine_bind_jnts[-1], apply=True, translate=False, rotate=True, scale=True, normal=False,
+                          preserveNormals=True)
         spine_bind_grp = cmds.group(spine_bind_jnts[0], name="spine_bind_joints_group")
         cmds.parent(spine_bind_grp, self.asset_names['extras'])
         cmds.skinCluster(spine_bind_jnts, spine_curve, tsb=True)
@@ -381,10 +401,10 @@ class GenerateRig(NodeNames):
 
         # twist for spine
         spine_pma = cmds.createNode("plusMinusAverage", name="Spine_Twist_PMA")
-        cmds.connectAttr('Spine_01_FK_Ctrl.rotateY', spine_pma+'.input1D[0]')
-        cmds.connectAttr('Spine_02_FK_Ctrl.rotateY', spine_pma+'.input1D[1]')
-        cmds.connectAttr('Spine_03_FK_Ctrl.rotateY', spine_pma+'.input1D[2]')
-        cmds.connectAttr(spine_pma+'.output1D', spine_ik_handle+".twist")
+        cmds.connectAttr('Spine_01_FK_Ctrl.rotateY', spine_pma + '.input1D[0]')
+        cmds.connectAttr('Spine_02_FK_Ctrl.rotateY', spine_pma + '.input1D[1]')
+        cmds.connectAttr('Spine_03_FK_Ctrl.rotateY', spine_pma + '.input1D[2]')
+        cmds.connectAttr(spine_pma + '.output1D', spine_ik_handle + ".twist")
 
         # creating neck ctrl
         neck_ctrl = self.ctrls_shapes.circle(name="Neck_Ctrl", radius=1, color=18)
@@ -400,8 +420,8 @@ class GenerateRig(NodeNames):
         lt_clv_ctrl = self.ctrls_shapes.circle(name=self.ctrls['LT_Clavicle'], color=18)
         rt_clv_ctrl = self.ctrls_shapes.circle(name=self.ctrls['RT_Clavicle'], color=18)
 
-        lt_clv_offset = cmds.group(lt_clv_ctrl, name=lt_clv_ctrl+"_Offset_group")
-        rt_clv_offset = cmds.group(rt_clv_ctrl, name=rt_clv_ctrl+"_Offset_group")
+        lt_clv_offset = cmds.group(lt_clv_ctrl, name=lt_clv_ctrl + "_Offset_group")
+        rt_clv_offset = cmds.group(rt_clv_ctrl, name=rt_clv_ctrl + "_Offset_group")
         cmds.matchTransform(lt_clv_offset, self.skin_jnts['LT_Clavicle'])
         cmds.matchTransform(rt_clv_offset, self.skin_jnts['RT_Clavicle'])
         cmds.parent(lt_clv_offset, cog_ctrl)
@@ -409,8 +429,19 @@ class GenerateRig(NodeNames):
 
         cmds.parentConstraint(lt_clv_ctrl, self.skin_jnts['LT_Clavicle'], mo=True)
         cmds.parentConstraint(rt_clv_ctrl, self.skin_jnts['RT_Clavicle'], mo=True)
-        cmds.parentConstraint(self.skin_jnts['spine_04'], lt_clv_offset, mo=True)
-        cmds.parentConstraint(self.skin_jnts['spine_04'], rt_clv_offset, mo=True)
+        cmds.parentConstraint('Spine_03_FK_Ctrl', lt_clv_offset, mo=True)
+        cmds.parentConstraint('Spine_03_FK_Ctrl', rt_clv_offset, mo=True)
+
+        # fix
+        cmds.parent('LT_Shoulder_Skn_Jnt', 'LT_Clavicle_Skn_Jnt_Group')
+        cmds.parent('RT_Shoulder_Skn_Jnt', 'LT_Clavicle_Skn_Jnt_Group')
+
+        lt_ = cmds.group('LT_Shoulder_Skn_Jnt', name="lt_grp_fix")
+        rt_ = cmds.group('RT_Shoulder_Skn_Jnt', name="lt_grp_fix")
+        cmds.parent(lt_, 'LT_Clavicle_Skn_Jnt')
+        cmds.parent(rt_, 'RT_Clavicle_Skn_Jnt')
+        cmds.parentConstraint('Placement_Ctrl', 'LT_Thigh_Skn_Jnt_Group', mo=True)
+        cmds.parentConstraint('Hip_Ctrl', 'Root_Skn_Jnt', mo=True)
 
         # limb rig
         self.custom_rig.limb_rig(side='LT', shape="Arm")
@@ -593,8 +624,9 @@ class Rig_Customs(NodeNames):
         return newJnt
 
     def limb_rig(self, side="LT", shape="Arm"):
+
         if shape == "Arm":
-            parent, ctrl = "Clavicle_Skn_Jnt", side+"_Clavicle_Ctrl"
+            parent, ctrl = "Clavicle_Skn_Jnt", side + "_Clavicle_Ctrl"
         else:
             parent, ctrl = "Root_Skn_Jnt", "Hip_Ctrl"
 
@@ -617,7 +649,8 @@ class Rig_Customs(NodeNames):
         cmds.matchTransform(ik_02, side + mid_jnt)
         cmds.matchTransform(ik_03, side + end_jnt)
         cmds.select(cl=True)
-        cmds.makeIdentity(ik_01, apply=True, translate=True, rotate=True, scale=True, normal=False, preserveNormals=True)
+        cmds.makeIdentity(ik_01, apply=True, translate=True, rotate=True, scale=True, normal=False,
+                          preserveNormals=True)
 
         # creating_ctrls and matching positions
         ik_jnt_grp = cmds.group(ik_01, name=side + "_" + shape + "_IK_Jnts")
@@ -630,7 +663,7 @@ class Rig_Customs(NodeNames):
 
         ik_grp = cmds.group([ik_offset, pole_offset], name=side + "_" + shape + "_IK_Ctrls_Group")
         ik_handle = cmds.ikHandle(
-            name=side+"_"+shape+"_IK_handel",
+            name=side + "_" + shape + "_IK_handel",
             startJoint=ik_01,
             endEffector=ik_03,
             solver="ikRPsolver"
@@ -643,7 +676,7 @@ class Rig_Customs(NodeNames):
         cmds.parentConstraint(self.asset_names['placement_ctrl'], ik_jnt_grp, mo=True)
         cmds.scaleConstraint(self.asset_names['placement_ctrl'], ik_jnt_grp, mo=True)
         cmds.parentConstraint(ctrl, ik_01, mo=True)
-        ik_def = cmds.group([ik_handle[0], ik_jnt_grp], name=side+'_'+shape+"_ik_def_group")
+        ik_def = cmds.group([ik_handle[0], ik_jnt_grp], name=side + '_' + shape + "_ik_def_group")
         cmds.parent(ik_def, def_grp)
 
         # FK Chain
@@ -651,12 +684,14 @@ class Rig_Customs(NodeNames):
         fk_01 = cmds.joint(name=side + base_jnt.replace("Skn", "FK"))
         fk_02 = cmds.joint(name=side + mid_jnt.replace("Skn", "FK"))
         fk_03 = cmds.joint(name=side + end_jnt.replace("Skn", "FK"))
+        cmds.makeIdentity(fk_01, )
 
         cmds.matchTransform(fk_01, side + base_jnt)
         cmds.matchTransform(fk_02, side + mid_jnt)
         cmds.matchTransform(fk_03, side + end_jnt)
         cmds.select(cl=True)
-        cmds.makeIdentity(fk_01, apply=True, translate=True, rotate=True, scale=True, normal=False, preserveNormals=True)
+        cmds.makeIdentity(fk_01, apply=True, translate=True, rotate=True, scale=True, normal=False,
+                          preserveNormals=True)
         # creating fk ctrls
         for each in [fk_01, fk_02, fk_03]:
             print(each)
@@ -675,9 +710,11 @@ class Rig_Customs(NodeNames):
         cmds.parent(def_grp, self.asset_names['extras'])
 
         # IK FK Blending
-        ikfk = self.ctrl_shapes.plus(name=side+"_"+shape+"_IKFK_Switch")
-        ikfk_grp = cmds.group(ikfk, name=ikfk+"_Group")
-        cmds.matchTransform(ikfk_grp, ik_03)
+        ikfk = self.ctrl_shapes.plus(name=side + "_" + shape + "_IKFK_Switch")
+        ikfk_grp = cmds.group(ikfk, name=ikfk + "_Group")
+        ikfk_offset_grp = cmds.group(ikfk_grp, name=ikfk + "_Offset_Group")
+        cmds.matchTransform(ikfk_offset_grp, ik_03)
+        cmds.parentConstraint(side + end_jnt, ikfk_offset_grp, mo=True)
         attributes = ["tx", "ty", "tz", "rx", "ry", "rz", "sx", "sy", "sz", "v"]
         cmds.addAttr(
             ikfk,
@@ -685,10 +722,60 @@ class Rig_Customs(NodeNames):
             attributeType="double",
             minValue=0,
             maxValue=1,
-            defaultValue=0)
+            defaultValue=1,
+            keyable=True)
 
         for attr in attributes:
             cmds.setAttr(f"{ikfk}.{attr}", lock=True, keyable=False, channelBox=False)
+        cmds.parent(ikfk_offset_grp, 'Placement_Ctrl')
+
+        # blending colors
+        for each in ['.translate', '.rotate', '.scale']:
+            # 01
+            bca_01 = cmds.createNode('blendColors', name=side + base_jnt + each.replace('.', '_') + "_BCA")
+            cmds.connectAttr(ikfk + ".IKFK", bca_01 + ".blender")
+            cmds.connectAttr(ik_01 + each, bca_01 + ".color1")
+            cmds.connectAttr(fk_01 + each, bca_01 + ".color2")
+            cmds.connectAttr(bca_01 + ".output", side + base_jnt + each)
+
+            # 02
+            bca_02 = cmds.createNode('blendColors', name=side + mid_jnt + each.replace('.', '_') + "_BCA")
+            cmds.connectAttr(ikfk + ".IKFK", bca_02 + ".blender")
+            cmds.connectAttr(ik_02 + each, bca_02 + ".color1")
+            cmds.connectAttr(fk_02 + each, bca_02 + ".color2")
+            cmds.connectAttr(bca_02 + ".output", side + mid_jnt + each)
+
+            # 03
+            bca_03 = cmds.createNode('blendColors', name=side + end_jnt + each.replace('.', '_') + "_BCA")
+            cmds.connectAttr(ikfk + ".IKFK", bca_03 + ".blender")
+            cmds.connectAttr(ik_03 + each, bca_03 + ".color1")
+            cmds.connectAttr(fk_03 + each, bca_03 + ".color2")
+            cmds.connectAttr(bca_03 + ".output", side + end_jnt + each)
+
+        # ctrls visibility
+        rvs = cmds.createNode('reverse', name=side + shape + "_Vis_Rvs")
+        cmds.connectAttr(ikfk + ".IKFK", ik_grp + ".visibility")
+        cmds.connectAttr(ikfk + ".IKFK", rvs + ".input.inputX")
+        cmds.connectAttr(rvs + '.output.outputX', fk_01.replace('Jnt', 'Ctrl_Offset_Group') + '.visibility')
+        cmds.select(cl=True)
+
+    def find_joints_with_rotation(self):
+        joints_with_rotation = []
+        all_joints = self.skin_jnts.values()
+
+        for joint in all_joints:
+            if joint == 'Root_Ctrl_Skn_Jnt':
+                pass
+            else:
+                # Check if any of the rotation attributes are non-zero
+                rotate_x = cmds.getAttr(f"{joint}.rotateX")
+                rotate_y = cmds.getAttr(f"{joint}.rotateY")
+                rotate_z = cmds.getAttr(f"{joint}.rotateZ")
+
+                if rotate_x != 0 or rotate_y != 0 or rotate_z != 0:
+                    joints_with_rotation.append(joint)
+
+        return joints_with_rotation
 
 
 if __name__ == "__main__":
