@@ -449,6 +449,11 @@ class GenerateRig(NodeNames):
         self.custom_rig.limb_rig(side='LT', shape="leg")
         self.custom_rig.limb_rig(side='RT', shape="Leg")
 
+        # wrap
+        cog_shape = cmds.listRelatives('COG_Ctrl', shapes=True)[0]
+        cmds.setAttr(cog_shape+".visibility", .0)
+
+
 
 class ControlShapes:
     @staticmethod
@@ -758,6 +763,58 @@ class Rig_Customs(NodeNames):
         cmds.connectAttr(ikfk + ".IKFK", rvs + ".input.inputX")
         cmds.connectAttr(rvs + '.output.outputX', fk_01.replace('Jnt', 'Ctrl_Offset_Group') + '.visibility')
         cmds.select(cl=True)
+
+        # adding twist
+
+        twist_01_jnt = cmds.joint(name=side+"_"+shape+"_twist_01_Jnt")
+        twist_01_jnt_grp = cmds.group(twist_01_jnt, name=twist_01_jnt+"_group")
+
+        jnt_con_01 = cmds.pointConstraint(side+base_jnt, side+mid_jnt, twist_01_jnt_grp, mo=False)[0]
+        cmds.setAttr(jnt_con_01+"."+side+base_jnt+"W0", 0.5)
+        cmds.setAttr(jnt_con_01+"."+side+mid_jnt+"W1", 0.5)
+        cmds.select(cl=True)
+        twist_01_ctrl = self.ctrl_shapes.circle(name=side+"_"+shape+"_twist_01_Ctrl", radius=0.5, color=14)
+        twist_01_ctrl_grp = cmds.group(twist_01_ctrl, name=twist_01_ctrl+"group")
+
+        ctrl_con_01 = cmds.pointConstraint(side+base_jnt, side+mid_jnt, twist_01_ctrl_grp, mo=False)[0]
+        cmds.setAttr(ctrl_con_01+"."+side+base_jnt+"W0", 0.5)
+        cmds.setAttr(ctrl_con_01+"."+side+mid_jnt+"W1", 0.5)
+
+        cmds.connectAttr(twist_01_ctrl+".translate", twist_01_jnt+".translate")
+        cmds.connectAttr(twist_01_ctrl+".rotate", twist_01_jnt+".rotate")
+        cmds.connectAttr(twist_01_ctrl+".scale", twist_01_jnt+".scale")
+
+        cmds.parent(twist_01_ctrl_grp, 'Placement_Ctrl')
+        cmds.parent(twist_01_jnt_grp, 'Skn_Jnts_Group')
+
+        cmds.select(cl=True)
+
+        # 02
+        twist_02_jnt = cmds.joint(name=side+shape+"_twist_02_Jnt")
+        twist_02_jnt_grp = cmds.group(twist_02_jnt, name=twist_02_jnt+"_group")
+
+        jnt_con_02 = cmds.pointConstraint(side+mid_jnt, side+end_jnt, twist_02_jnt_grp, mo=False)[0]
+        cmds.setAttr(jnt_con_02+"."+side+mid_jnt+"W0", 0.5)
+        cmds.setAttr(jnt_con_02+"."+side+end_jnt+"W1", 0.5)
+        cmds.select(cl=True)
+        twist_02_ctrl = self.ctrl_shapes.circle(name=side+shape+"_twist_02_Ctrl", radius=0.5, color=14)
+        twist_02_ctrl_grp = cmds.group(twist_02_ctrl, name=twist_02_ctrl+"group")
+
+        ctrl_con_02 = cmds.pointConstraint(side+mid_jnt, side+end_jnt, twist_02_ctrl_grp, mo=False)[0]
+        cmds.setAttr(ctrl_con_02+"."+side+mid_jnt+"W0", 0.5)
+        cmds.setAttr(ctrl_con_02+"."+side+end_jnt+"W1", 0.5)
+
+        cmds.connectAttr(twist_02_ctrl+".translate", twist_02_jnt+".translate")
+        cmds.connectAttr(twist_02_ctrl+".rotate", twist_02_jnt+".rotate")
+        cmds.connectAttr(twist_02_ctrl+".scale", twist_02_jnt+".scale")
+
+        cmds.parent(twist_02_ctrl_grp, 'Placement_Ctrl')
+        cmds.parent(twist_02_jnt_grp, 'Skn_Jnts_Group')
+
+        cmds.select(cl=True)
+
+
+
 
     def find_joints_with_rotation(self):
         joints_with_rotation = []
