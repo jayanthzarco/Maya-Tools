@@ -1,60 +1,65 @@
-import maya.cmds as cmds
+import pymel.core as pm
 
-
-def __create_follicle(mesh, pos=None):
+def create_follicle(mesh, pos=None):
+    """Creates a follicle on the given mesh at the specified UV position."""
     if pos is None:
         pos = [0.7, 0.1]
-    foll_shape_ = cmds.createNode('follicle')
-    foll_trans = cmds.listRelatives(foll_shape_, parent=True)[0]
-    print(foll_trans)
 
-    cmds.connectAttr(mesh + '.outMesh', foll_shape_ + '.inputMesh', force=True)
-    cmds.connectAttr(mesh + '.worldMatrix[0]', foll_shape_ + ".inputWorldMatrix", force=True)
+    foll_shape = pm.createNode('follicle')
+    foll_trans = foll_shape.getParent()
 
-    cmds.connectAttr(foll_shape_ + '.outTranslate', foll_trans + '.translate', force=True)
-    cmds.connectAttr(foll_shape_ + '.outRotate', foll_trans + ".rotate", force=True)
+    mesh.outMesh.connect(foll_shape.inputMesh, force=True)
+    mesh.worldMatrix[0].connect(foll_shape.inputWorldMatrix, force=True)
 
-    cmds.setAttr(foll_shape_ + '.parameterU', pos[0])
-    cmds.setAttr(foll_shape_ + '.parameterV', pos[1])
+    foll_shape.outTranslate.connect(foll_trans.translate, force=True)
+    foll_shape.outRotate.connect(foll_trans.rotate, force=True)
+
+    foll_shape.parameterU.set(pos[0])
+    foll_shape.parameterV.set(pos[1])
 
     print(f"Follicle created on {pos[0]}, {pos[1]}")
-    return [foll_trans, foll_shape_]
+    return foll_trans, foll_shape
 
 
-def __create_follicle_ctrl(fol):
-    pos = fol[-1]
-    ctrl = cmds.circle(ch=False)[0]
-    limit_group = cmds.group(ctrl, name=ctrl + '_Limit_Group')
-    offset_group = cmds.group(limit_group, name=ctrl + "_Offset_Group")
-    cmds.matchTransform(offset_group, fol[0])
+def create_follicle_ctrl(fol):
+    """Creates a control for the follicle, constraining it properly."""
+    fol_trans, fol_shape = fol
 
-    mnd = cmds.createNode("multiplyDivide", name=fol[0] + "_MND")
+    ctrl = pm.circle(ch=False)[0]
+    limit_group = pm.group(ctrl, name=ctrl + '_Limit_Group')
+    offset_group = pm.group(limit_group, name=ctrl + "_Offset_Group")
+    pm.matchTransform(offset_group, fol_trans)
+
+    mnd = pm.createNode("multiplyDivide", name=fol_trans + "_MND")
 
     for t in ["X", "Y", "Z"]:
-        cmds.connectAttr(ctrl + ".translate" + t, mnd + ".input1" + t)
-        cmds.setAttr(mnd + ".input2" + t, -1)
-        cmds.connectAttr(mnd + ".output" + t, limit_group + ".translate" + t)
+        ctrl.attr(f"translate{t}") >> mnd.attr(f"input1{t}")
+        mnd.attr(f"input2{t}").set(-1)
+        mnd.attr(f"output{t}") >> limit_group.attr(f"translate{t}")
 
-    pma = cmds.createNode("plusMinusAverage", name=fol[0] + "_PMA")
-    cmds.setAttr(pma + ".input2D[0].input2Dx", pos[0])
-    cmds.setAttr(pma + ".input2D[0].input2Dy", pos[1])
+    pma = pm.createNode("plusMinusAverage", name=fol_trans + "_PMA")
+    pma.input2D[0].input2Dx.set(fol_shape.parameterU.get())
+    pma.input2D[0].input2Dy.set(fol_shape.parameterV.get())
 
-    cmds.connectAttr(mnd + ".outputX", pma + ".input2D[1].input2Dx")
-    cmds.connectAttr(mnd + ".outputX", pma + ".input2D[1].input2Dy")
+    mnd.outputX >> pma.input2D[1].input2Dx
+    mnd.outputY >> pma.input2D[1].input2Dy
 
-    cmds.connectAttr(pma + ".output2Dx", fol[1] + ".parameterU")
-    cmds.connectAttr(pma + ".output2Dy", fol[1] + ".parameterV")
+    pma.output2D.output2Dx >> fol_shape.parameterU
+    pma.output2D.output2Dy >> fol_shape.parameterV
 
-    cmds.parentConstraint(fol[0], offset_group, mo=True)
-
-
-def __get_selected_meshes():
-    return [obj for obj in cmds.ls(selection=True, long=True)
-            if cmds.listRelatives(obj, shapes=True, type="mesh")]
+    pm.parentConstraint(fol_trans, offset_group, mo=True)
+    pm.scaleConstraint(fol_trans, offset_group, mo=True)
 
 
-mesh = __get_selected_meshes()
-follicle = __create_follicle(mesh[0])
-__create_follicle_ctrl(follicle)
+def get_selected_meshes():
+    """Returns selected mesh transforms only."""
+    return [obj for obj in pm.ls(selection=True, long=True) if obj.getShape() and obj.getShape().type() == "mesh"]
 
 
+# Example Usage
+selected_meshes = get_selected_meshes()
+if selected_meshes:
+    follicle = create_follicle(selected_meshes[0])
+    create_follicle_ctrl(follicle)
+else:
+    pm.warning("No mesh selected!")
