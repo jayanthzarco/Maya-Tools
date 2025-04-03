@@ -33,7 +33,7 @@ def delete_lookdev_graph_editor_tabs():
         # Delete each tab
         for tab in tabs:
             try:
-                # Close the tab - different approaches depending on Maya version
+                # Close he tab - different approaches depending on Maya version
                 if cmds.control(tab, exists=True):
                     # Try to use the closeTab command if available
                     try:
